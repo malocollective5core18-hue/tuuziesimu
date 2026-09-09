@@ -1929,7 +1929,7 @@
           <button class="btn ghost btn-sm" type="button" onclick="exportAdminTable('applicants')">Pakua CSV</button>
         </div>
         <div class="admin-table-wrap"><table class="admin-table" id="applicantsTable">
-          <thead><tr><th onclick="sortAdminTable('applicants','applicationId')">ID ya Maombi <span class="sort-caret"></span></th><th onclick="sortAdminTable('applicants','fullName')">Jina <span class="sort-caret"></span></th><th onclick="sortAdminTable('applicants','phone')">Namba ya Simu <span class="sort-caret"></span></th><th onclick="sortAdminTable('applicants','passkey')">Passkey <span class="sort-caret"></span></th><th onclick="sortAdminTable('applicants','loginStatus')">Status <span class="sort-caret"></span></th><th>Majibu</th><th>Hatua</th></tr></thead>
+          <thead><tr><th onclick="sortAdminTable('applicants','applicationId')">ID ya Maombi <span class="sort-caret"></span></th><th onclick="sortAdminTable('applicants','fullName')">Jina <span class="sort-caret"></span></th><th onclick="sortAdminTable('applicants','phone')">Namba ya Simu <span class="sort-caret"></span></th><th title="Passkey inaonyeshwa mara moja tu wakati wa usajili, kisha inafichwa kwa usalama">Passkey<th onclick="sortAdminTable('applicants','loginStatus')">Status <span class="sort-caret"></span></th><th>Majibu</th><th>Hatua</th></tr></thead>
           <tbody id="applicantsTbody"></tbody>
         </table></div>
         <p class="empty-note" id="applicantsEmpty" data-default-message="Hakuna waombaji bado." style="display:none;">Hakuna waombaji bado.</p>
@@ -1945,7 +1945,7 @@
           <tbody id="printedTbody"></tbody>
         </table></div>
         <p class="empty-note" id="printedEmpty" data-default-message="Bado hakuna aliyekamilisha fomu." style="display:none;">Bado hakuna aliyekamilisha fomu.</p>
-        <div class="admin-danger-zone"><div><strong>Rekodi za majaribio</strong><p>Futa data yote iliyohifadhiwa kwenye kivinjari hiki pekee.</p></div><button class="btn ghost btn-sm btn-danger" type="button" onclick="clearAdminData()">Futa data yote</button></div>
+        <div class="admin-danger-zone"><div><strong>Eneo la hatari</strong><p>Hii inafuta wauzaji WOTE na fomu zao kutoka kwenye database ya moja kwa moja — si kivinjari tu. Haiwezi kurejeshwa.</p></div><button class="btn ghost btn-sm btn-danger" type="button" onclick="clearAdminData()">Futa data yote</button></div>
       </div>
 
     </div>
@@ -1953,356 +1953,377 @@
 </div>
 
 <script>
-  /* =====================================================
-     SIMUPESA SUPABASE INTEGRATION (SCRIPT-ONLY)
-     Replaces localStorage with Supabase while preserving
-     every existing UI element, ID, class, and visual
-     behaviour defined in the HTML/CSS.
-     ===================================================== */
-
-  // ---- globals kept for compatibility with existing HTML ----
-  var currentApplicant = null;
-  var sellerPdfUrl = null;
-  var frontPhotoData = null;
-  var backPhotoData = null;
-  var supportingPhotoData = null;
-  var activePhotoSide = null;
-  var photoPickerScrollY = 0;
-  var respondingApplicationId = null;
-  var selectedResponseStatus = null;
-  var selectedApplication = null;
-  var adminTableSort = {
-    applicants: { key: '', direction: 'asc' },
-    printed: { key: '', direction: 'asc' }
-  };
-
-  // ---- supabase client (already in the page via CDN) ----
+  /* Shared backend configuration — same Supabase project and Cloudinary
+     account used by Lomi-main. The anonymous key is safe to expose only
+     when RLS policies and Edge Functions are configured in Supabase. */
   const SUPABASE_URL = 'https://zzgnrqmaymlaaumjlxzl.supabase.co';
-  const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp6Z25ycW1heW1sYWF1bWpseHpsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg5NDY4MTcsImV4cCI6MjEwNDUyMjgxN30.fIQKlZ3uMbtBvnBoWQzeCdjOjiPGVz3ndLACOUefbs4';
-  const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
-
-  // ---- cloudinary config (unchanged from original) ----
+  const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp6Z25ycW1heW1sYWF1bWpseHpsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg5NDY4MTcsImV4cCI6MjEwNDUyMjgxN30.fIQKlZ3uMbtBvnBoWQzeCdjOjiPGVz3ndLACOUefbs4';
   const CLOUDINARY_CLOUD_NAME = 'dcpqnmdas';
   const CLOUDINARY_UPLOAD_PRESET = 'malocollective';
   const CLOUDINARY_SIMUPESA_FOLDER = 'simupesa-applications';
+  const CLOUDINARY_UPLOAD_URL = 'https://api.cloudinary.com/v1_1/' + CLOUDINARY_CLOUD_NAME + '/image/upload';
 
-  // ============================================================
-  // 1.  REPLACE localStorage FUNCTIONS WITH SUPABASE CALLS
-  // ============================================================
+  /* Seller-side actions (login, submit) go through SECURITY DEFINER
+     Postgres RPCs (see the schema file) instead of Edge Functions —
+     no separate deploy step, just this HTML + the one SQL file. */
+  const SELLER_SESSION_KEY = 'simupesa_seller_session'; // sessionStorage: { token, expiresAt } — cleared when the tab closes
 
-  async function loadApplicants() {
-    // sellers + applications + responses (admin overview)
-    const { data, error } = await supabase
+  const supabaseClient = window.supabase && window.supabase.createClient
+    ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+        auth: { persistSession: true, autoRefreshToken: true }
+      })
+    : null;
+
+  function hasSupabaseConnection() {
+    return Boolean(supabaseClient);
+  }
+
+  if (!supabaseClient) {
+    console.warn('Supabase library did not load. SimuPesa will use local data until it is available.');
+  }
+</script>
+
+
+
+
+
+
+
+
+
+<script>
+  var nav = document.getElementById('siteNav');
+  window.addEventListener('scroll', function () {
+    if (window.scrollY > 40) { nav.classList.add('scrolled'); }
+    else { nav.classList.remove('scrolled'); }
+  });
+
+  var revealItems = document.querySelectorAll('[class*="reveal"]');
+  var observer = new IntersectionObserver(function (entries) {
+    entries.forEach(function (entry) {
+      if (entry.isIntersecting) {
+        entry.target.classList.add('in-view');
+        observer.unobserve(entry.target);
+      }
+    });
+  }, { threshold: 0.2 });
+  revealItems.forEach(function (item) { observer.observe(item); });
+
+  var brands = ['iPhone', 'Samsung', 'Tecno', 'Infinix', 'Itel', 'Huawei', 'Oppo', 'Vivo', 'Nokia', 'Xiaomi'];
+  var track = document.getElementById('marqueeTrack');
+  brands.concat(brands).forEach(function (word) {
+    var el = document.createElement('span');
+    el.textContent = word;
+    track.appendChild(el);
+  });
+
+</script>
+
+<script>
+  /* =====================================================
+     SIMUPESA APP LOGIC
+     Real backend: Supabase (Postgres + Auth) for everything, via
+     supabaseClient.from()/.rpc(). Seller login/submit go through
+     SECURITY DEFINER RPCs (rpc_seller_login, rpc_resume_seller_session,
+     rpc_submit_application) since sellers never get a Supabase Auth
+     account — RLS alone can't protect those writes. Photos go to
+     Cloudinary. No application/seller data is ever kept in
+     localStorage — only the short-lived seller session token lives in
+     sessionStorage, cleared when the tab closes.
+     ===================================================== */
+
+  function normalizePhone(p){ return (p || '').replace(/[^0-9]/g, ''); }
+
+  /* ----------------- RPC helper -----------------
+     supabase-js's rpc() resolves with { data, error } rather than
+     throwing, and a PL/pgSQL `raise exception 'CODE'` shows up as
+     error.message === 'CODE'. Normalize that into a thrown Error with
+     .code set, so callers can branch on it the same way regardless of
+     which RPC they called. */
+  async function callRpc(name, payload){
+    var result = await supabaseClient.rpc(name, payload || {});
+    if (result.error) {
+      var err = new Error(result.error.message);
+      err.code = result.error.message;
+      throw err;
+    }
+    var row = Array.isArray(result.data) ? result.data[0] : result.data;
+    return row || null;
+  }
+
+  /* ----------------- Seller session (sessionStorage only) ----------------- */
+  function getSellerSession(){
+    try { return JSON.parse(sessionStorage.getItem(SELLER_SESSION_KEY)); }
+    catch (e) { return null; }
+  }
+  function setSellerSession(token, expiresAt){
+    sessionStorage.setItem(SELLER_SESSION_KEY, JSON.stringify({ token: token, expiresAt: expiresAt }));
+  }
+  function clearSellerSession(){ sessionStorage.removeItem(SELLER_SESSION_KEY); }
+
+  /* ----------------- Cloudinary upload (unsigned preset) -----------------
+     Takes a canvas-normalized JPEG data URL (already produced by
+     fileToJpegDataUrl below) and returns a Cloudinary secure_url. */
+  async function uploadToCloudinary(dataUrl, label){
+    var form = new FormData();
+    form.append('file', dataUrl);
+    form.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
+    form.append('folder', CLOUDINARY_SIMUPESA_FOLDER);
+    if (label) form.append('public_id', label + '-' + Date.now());
+    var res = await fetch(CLOUDINARY_UPLOAD_URL, { method: 'POST', body: form });
+    var body = await res.json();
+    if (!res.ok || !body.secure_url) throw new Error((body.error && body.error.message) || 'CLOUDINARY_UPLOAD_FAILED');
+    return body.secure_url;
+  }
+
+  /* ----------------- Admin: Supabase reads/writes (RLS-protected) -----------------
+     Admins are real Supabase Auth users, so these go straight through
+     supabaseClient and rely on the "admins full access" RLS policies
+     in simupesa.sql — no Edge Function needed for the admin side. */
+
+  async function fetchAdminOverview(){
+    var result = await supabaseClient
       .from('admin_seller_overview')
       .select('*')
       .order('registered_at', { ascending: false });
-
-    if (error) {
-      console.error('loadApplicants error:', error);
-      return [];
-    }
-    // Map the view columns back to the object shape expected by the
-    // existing UI functions (applicant objects).
-    return data.map(row => ({
-      id: row.seller_id,
-      applicationId: row.application_id,
-      fullName: row.full_name,
-      phone: row.phone,
-      passkey: '', // never exposed from DB; kept for compatibility
-      loginStatus: row.login_status || 'pending',
-      registeredAt: row.registered_at,
-      response: row.response_status ? {
-        status: row.response_status,
-        reason: row.response_reason || '',
-        agreedPrice: row.agreed_price || ''
-      } : null
-    }));
+    if (result.error) throw result.error;
+    return result.data || [];
   }
 
-  // The UI expects loadApplicants() to be synchronous. We'll keep a
-  // local cache that is refreshed on every dashboard render.
-  let applicantsCache = [];
-
-  async function refreshApplicantsCache() {
-    applicantsCache = await loadApplicants();
-    return applicantsCache;
-  }
-
-  // saveApplicants is no longer used; we use Supabase mutations.
-  function saveApplicants(list) {
-    // no-op – we write directly to Supabase via RPC/inserts
-    console.warn('saveApplicants called but localStorage is no longer used.');
-  }
-
-  // Completed applications: we derive them from the sellers that have
-  // a completed application + response.
-  async function loadCompleted() {
-    const { data, error } = await supabase
-      .from('admin_seller_overview')
-      .select('*')
-      .not('submitted_at', 'is', null);
-
-    if (error) {
-      console.error('loadCompleted error:', error);
-      return [];
-    }
-    return data.map(row => ({
-      applicationId: row.application_id,
-      fullname: row.full_name,
-      phone: row.phone,
-      completedAt: row.submitted_at || row.registered_at,
-      applicationData: null, // will be fetched on demand
-      photos: null
-    }));
-  }
-
-  async function saveCompleted(list) {
-    // no-op: completed applications are a view, not a separate table
-    console.warn('saveCompleted called but localStorage is no longer used.');
-  }
-
-  // Helper: get full application with photos for a given ID
-  async function fetchFullApplication(applicationId) {
-    const { data: appData, error: appError } = await supabase
-      .from('applications')
-      .select(`
-        *,
-        seller:seller_id ( full_name, phone )
-      `)
+  async function fetchFullApplication(applicationId){
+    var result = await supabaseClient
+      .from('sellers')
+      .select('id, application_id, full_name, phone, login_status, registered_at, applications(*, application_photos(*), application_responses(*))')
       .eq('application_id', applicationId)
       .maybeSingle();
+    if (result.error) throw result.error;
+    if (!result.data) return null;
+    var row = result.data;
+    var application = Array.isArray(row.applications) ? row.applications[0] : row.applications;
+    if (!application) return { seller: row, application: null, photos: null, response: null };
+    var photosRaw = Array.isArray(application.application_photos) ? application.application_photos[0] : application.application_photos;
+    var responseRaw = Array.isArray(application.application_responses) ? application.application_responses[0] : application.application_responses;
+    return { seller: row, application: application, photos: photosRaw || null, response: responseRaw || null };
+  }
 
-    if (appError || !appData) {
-      console.error('fetchFullApplication error:', appError);
-      return null;
+  function escapeHtml(str){
+    var div = document.createElement('div');
+    div.textContent = str || '';
+    return div.innerHTML;
+  }
+
+  /* ===================== VIEW ROUTING ===================== */
+  function showView(id){
+    document.querySelectorAll('.view').forEach(function(v){ v.classList.remove('is-active'); });
+    var el = document.getElementById(id);
+    if (el) el.classList.add('is-active');
+    window.scrollTo(0, 0);
+    if (id === 'adminDashboardView') { renderAdminTables(); }
+  }
+
+  var currentApplicant = null;
+
+  /* ===================== GATE (passkey entry) ===================== */
+  var gateForm = document.getElementById('gateForm');
+  gateForm.addEventListener('submit', async function (e) {
+    e.preventDefault();
+    var phone = document.getElementById('gatePhone').value;
+    var code = document.getElementById('gateCode').value.trim();
+    var errEl = document.getElementById('gateError');
+    var submitBtn = gateForm.querySelector('button[type="submit"]');
+
+    errEl.textContent = '';
+    if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Inakagua...'; }
+
+    try {
+      var result = await callRpc('rpc_seller_login', { p_phone: phone, p_passkey: code });
+      if (!result) throw new Error('SELLER_NOT_FOUND');
+      setSellerSession(result.token, result.expires_at);
+      currentApplicant = {
+        sellerId: result.seller_id,
+        applicationId: result.application_id,
+        fullName: result.full_name,
+        phone: result.phone,
+        response: result.has_submitted ? { status: result.response_status, reason: result.response_reason, agreed_price: result.agreed_price } : null
+      };
+
+      document.getElementById('formTopbarName').textContent = 'Fomu ya ' + currentApplicant.fullName;
+      document.getElementById('sellerApplicationId').textContent = currentApplicant.applicationId;
+      document.getElementById('a_fullname').value = currentApplicant.fullName;
+      document.getElementById('a_phone').value = currentApplicant.phone;
+      renderSellerResponse(currentApplicant);
+
+      if (result.has_submitted) {
+        errEl.textContent = 'Umeshatuma fomu hii tayari. Angalia hali ya maombi yako hapa chini.';
+      }
+
+      showView('formView');
+    } catch (error) {
+      console.error('Seller login failed:', error);
+      if (error.code === 'SELLER_NOT_FOUND') {
+        errEl.textContent = 'Namba hii haijasajiliwa. Wasiliana na admin kwanza kupata usajili.';
+      } else if (error.code === 'INVALID_PASSKEY') {
+        errEl.textContent = 'Tarakimu 6 si sahihi. Jaribu tena au wasiliana na admin.';
+      } else {
+        errEl.textContent = 'Imeshindikana kuunganisha. Angalia intaneti yako kisha jaribu tena.';
+      }
+    } finally {
+      if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Ingia'; }
     }
+  });
 
-    const { data: photoData, error: photoError } = await supabase
-      .from('application_photos')
-      .select('*')
-      .eq('application_id', appData.id)
-      .maybeSingle();
-
-    if (photoError) {
-      console.error('fetch photo error:', photoError);
+  function confirmLeaveForm(){
+    if (window.confirm('Una uhakika unataka kutoka? Taarifa ulizojaza hazitahifadhiwa.')) {
+      showView('gateView');
     }
+  }
 
+  function renderSellerResponse(applicant){
+    var card = document.getElementById('sellerResponseCard');
+    var response = applicant.response;
+    card.classList.remove('is-active', 'is-rejected');
+    if (!response) return;
+    var title = document.getElementById('sellerResponseTitle');
+    var message = document.getElementById('sellerResponseMessage');
+    if (response.status === 'approved') {
+      title.textContent = 'Maombi yako yamekubaliwa';
+      message.textContent = (response.reason ? response.reason + '. ' : '') + (response.agreed_price ? 'Bei iliyokubaliwa ni TZS ' + Number(response.agreed_price).toLocaleString('en-US') + '.' : '');
+    } else {
+      title.textContent = 'Majibu ya maombi yako';
+      message.textContent = response.reason || 'Maombi yako hayajakubaliwa kwa sasa.';
+      card.classList.add('is-rejected');
+    }
+    card.classList.add('is-active');
+  }
+
+  /* ===================== PHOTO UPLOAD (normalize to JPEG via canvas) ===================== */
+  var frontPhotoData = null;
+  var backPhotoData = null;
+  var supportingPhotoData = null;
+
+  function fileToJpegDataUrl(file, maxDim, callback){
+    var reader = new FileReader();
+    reader.onload = function (ev) {
+      var img = new Image();
+      img.onload = function () {
+        var scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+        var canvas = document.createElement('canvas');
+        canvas.width = Math.round(img.width * scale);
+        canvas.height = Math.round(img.height * scale);
+        var ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        callback(canvas.toDataURL('image/jpeg', 0.85));
+      };
+      img.src = ev.target.result;
+    };
+    reader.readAsDataURL(file);
+  }
+
+  function setupPhotoSlot(inputId, slotId, previewId, onReady){
+    var input = document.getElementById(inputId);
+    var slot = document.getElementById(slotId);
+    var preview = document.getElementById(previewId);
+    input.addEventListener('change', function () {
+      var file = input.files[0];
+      if (!file) return;
+      fileToJpegDataUrl(file, 1280, function (dataUrl) {
+        preview.src = dataUrl;
+        slot.classList.add('has-photo');
+        onReady(dataUrl);
+      });
+    });
+  }
+
+  var activePhotoSide = null;
+  var photoPickerScrollY = 0;
+
+  function openPhotoPicker(side){
+    activePhotoSide = side;
+    photoPickerScrollY = window.scrollY;
+    document.getElementById('photoSourceTitle').textContent = side === 'front' ? 'Picha ya mbele ya simu' : (side === 'back' ? 'Picha ya nyuma ya simu' : 'Picha ya warranty / receipt');
+    document.getElementById('photoSourceModal').classList.add('is-active');
+  }
+
+  function closePhotoPicker(){ document.getElementById('photoSourceModal').classList.remove('is-active'); }
+
+  function selectPhotoSource(source){
+    if (!activePhotoSide) return;
+    var photoName = activePhotoSide === 'front' ? 'Front' : (activePhotoSide === 'back' ? 'Back' : 'Supporting');
+    var input = document.getElementById('photo' + photoName + (source === 'camera' ? 'Camera' : 'Gallery'));
+    closePhotoPicker();
+    input.value = '';
+    input.click();
+  }
+
+  function keepPhotoFormPosition(){
+    window.setTimeout(function(){ window.scrollTo(0, photoPickerScrollY); }, 50);
+  }
+
+  setupPhotoSlot('photoFrontGallery', 'photoFrontSlot', 'photoFrontPreview', function (dataUrl) { frontPhotoData = dataUrl; keepPhotoFormPosition(); });
+  setupPhotoSlot('photoFrontCamera', 'photoFrontSlot', 'photoFrontPreview', function (dataUrl) { frontPhotoData = dataUrl; keepPhotoFormPosition(); });
+  setupPhotoSlot('photoBackGallery', 'photoBackSlot', 'photoBackPreview', function (dataUrl) { backPhotoData = dataUrl; keepPhotoFormPosition(); });
+  setupPhotoSlot('photoBackCamera', 'photoBackSlot', 'photoBackPreview', function (dataUrl) { backPhotoData = dataUrl; keepPhotoFormPosition(); });
+  setupPhotoSlot('photoSupportingGallery', 'photoSupportingSlot', 'photoSupportingPreview', function (dataUrl) { supportingPhotoData = dataUrl; keepPhotoFormPosition(); });
+  setupPhotoSlot('photoSupportingCamera', 'photoSupportingSlot', 'photoSupportingPreview', function (dataUrl) { supportingPhotoData = dataUrl; keepPhotoFormPosition(); });
+
+  /* ===================== FORM COLLECTION ===================== */
+  function getVal(id){ var el = document.getElementById(id); return el ? el.value : ''; }
+  function getChecked(id){ var el = document.getElementById(id); return el ? el.checked : false; }
+  function getRadio(name){
+    var el = document.querySelector('input[name="' + name + '"]:checked');
+    return el ? el.value : '';
+  }
+
+  function collectFormData(){
     return {
-      ...appData,
-      photos: photoData || null
+      applicationId: currentApplicant ? currentApplicant.applicationId : '',
+      a: {
+        fullname: getVal('a_fullname'), phone: getVal('a_phone'), nida: getVal('a_nida'),
+        location: getVal('a_location'), saledate: getVal('a_saledate'), reason: getVal('a_reason')
+      },
+      b: {
+        brand: getVal('b_brand'), model: getVal('b_model'), modelnum: getVal('b_modelnum'),
+        imei1: getVal('b_imei1'), imei2: getVal('b_imei2'), serial: getVal('b_serial'),
+        storage: getVal('b_storage'), network: getRadio('b_network'), dualsim: getRadio('b_dualsim')
+      },
+      c: {
+        screen: getRadio('c_screen'), touch: getRadio('c_touch'), frame: getRadio('c_frame'),
+        backcover: getRadio('c_backcover'), camglass: getRadio('c_camglass'), camlens: getRadio('c_camlens'),
+        buttons: getRadio('c_buttons'), chargeport: getRadio('c_chargeport'), simtray: getRadio('c_simtray'),
+        speaker: getRadio('c_speaker'), mic: getRadio('c_mic')
+      },
+      d: {
+        health: getVal('d_health'), replaced: getRadio('d_replaced'), chargesok: getRadio('d_chargesok'),
+        overheats: getRadio('d_overheats'), drainsfast: getRadio('d_drainsfast')
+      },
+      f: {
+        front: getRadio('f_front'), main: getRadio('f_main'), ultrawide: getRadio('f_ultrawide'),
+        telephoto: getRadio('f_telephoto'), flash: getRadio('f_flash'), video: getRadio('f_video'), focus: getRadio('f_focus')
+      },
+      g: {
+        powers: getRadio('g_powers'), fingerprint: getRadio('g_fingerprint'), faceid: getRadio('g_faceid'),
+        wifi: getRadio('g_wifi'), bt: getRadio('g_bt'), gps: getRadio('g_gps'), network: getRadio('g_network'),
+        calls: getRadio('g_calls'), sms: getRadio('g_sms'), internet: getRadio('g_internet')
+      },
+      h: {
+        opened: getRadio('h_opened'), repaired: getRadio('h_repaired'), screenchanged: getRadio('h_screenchanged'),
+        batterychanged: getRadio('h_batterychanged'), dropped: getRadio('h_dropped'), water: getRadio('h_water'),
+        spareparts: getVal('h_spareparts')
+      },
+      i: {
+        receipt: getChecked('i_receipt'), warranty: getChecked('i_warranty'),
+        invoice: getChecked('i_invoice'), other: getVal('i_other')
+      },
+      k: { asking: getVal('k_askingprice') },
+      conf: { signature: getVal('conf_signature'), date: getVal('conf_date') }
     };
   }
 
-  // ============================================================
-  // 2.  SELLER LOGIN (uses existing RPC verify_seller_login)
-  // ============================================================
-
-  // The gate form still uses the same IDs; we override the submit
-  // handler to call the RPC.
-  const gateForm = document.getElementById('gateForm');
-  gateForm.addEventListener('submit', async function (e) {
-    e.preventDefault();
-    const phone = normalizePhone(document.getElementById('gatePhone').value);
-    const code = document.getElementById('gateCode').value.trim();
-    const errEl = document.getElementById('gateError');
-
-    if (!phone || !code) {
-      errEl.textContent = 'Tafadhali jaza namba na tarakimu 6.';
-      return;
-    }
-
-    try {
-      const { data, error } = await supabase.rpc('verify_seller_login', {
-        p_phone: phone,
-        p_passkey: code
-      });
-
-      if (error) {
-        if (error.message.includes('SELLER_NOT_FOUND')) {
-          errEl.textContent = 'Namba hii haijasajiliwa. Wasiliana na admin kwanza.';
-        } else if (error.message.includes('INVALID_PASSKEY')) {
-          errEl.textContent = 'Tarakimu 6 si sahihi. Jaribu tena au wasiliana na admin.';
-        } else {
-          errEl.textContent = 'Kuna hitilafu. Jaribu tena.';
-        }
-        return;
-      }
-
-      if (!data || !data.seller_id) {
-        errEl.textContent = 'Hakuna data ya muuzaji.';
-        return;
-      }
-
-      // success – store seller info in a global
-      currentApplicant = {
-        id: data.seller_id,
-        applicationId: data.application_id,
-        fullName: data.full_name,
-        phone: phone,
-        passkey: code, // for UI only
-        loginStatus: 'success'
-      };
-
-      errEl.textContent = '';
-      document.getElementById('formTopbarName').textContent = 'Fomu ya ' + currentApplicant.fullName;
-      document.getElementById('sellerApplicationId').textContent = currentApplicant.applicationId;
-
-      // Pre-fill seller details from the gate
-      document.getElementById('a_fullname').value = currentApplicant.fullName;
-      document.getElementById('a_phone').value = currentApplicant.phone;
-
-      // Check if there is already a response for this seller
-      await renderSellerResponse(currentApplicant);
-
-      showView('formView');
-
-    } catch (err) {
-      console.error('Gate login error:', err);
-      errEl.textContent = 'Hitilafu ya mtandao. Jaribu tena.';
-    }
-  });
-
-  // ============================================================
-  // 3.  SELLER RESPONSE (render from DB)
-  // ============================================================
-
-  async function renderSellerResponse(applicant) {
-    const card = document.getElementById('sellerResponseCard');
-    const title = document.getElementById('sellerResponseTitle');
-    const message = document.getElementById('sellerResponseMessage');
-
-    card.classList.remove('is-active', 'is-rejected');
-
-    if (!applicant || !applicant.id) return;
-
-    // Fetch the latest response for this seller
-    const { data, error } = await supabase
-      .from('application_responses')
-      .select('*')
-      .eq('application_id', applicant.applicationId)
-      .maybeSingle();
-
-    if (error || !data) return;
-
-    if (data.status === 'approved') {
-      title.textContent = 'Maombi yako yamekubaliwa';
-      message.textContent = (data.reason ? data.reason + '. ' : '') +
-        (data.agreed_price ? 'Bei iliyokubaliwa ni TZS ' + Number(data.agreed_price).toLocaleString('en-US') + '.' : '');
-      card.classList.add('is-active');
-    } else if (data.status === 'rejected') {
-      title.textContent = 'Majibu ya maombi yako';
-      message.textContent = data.reason || 'Maombi yako hayajakubaliwa kwa sasa.';
-      card.classList.add('is-active', 'is-rejected');
-    }
-  }
-
-  // ============================================================
-  // 4.  ADMIN AUTH (uses Supabase Auth + admin_profiles)
-  // ============================================================
-
-  // The admin login form already exists; override its handler.
-  document.getElementById('adminLoginForm').addEventListener('submit', async function (e) {
-    e.preventDefault();
-    const email = document.getElementById('adminEmail').value.trim().toLowerCase();
-    const pass = document.getElementById('adminPassword').value;
-    const errEl = document.getElementById('adminLoginError');
-    const submitBtn = this.querySelector('button[type="submit"]');
-
-    submitBtn.disabled = true;
-    submitBtn.textContent = 'Inaingia...';
-
-    try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password: pass
-      });
-
-      if (error) throw error;
-
-      // Check admin profile
-      const { data: admin, error: adminError } = await supabase
-        .from('admin_profiles')
-        .select('id')
-        .eq('id', data.user.id)
-        .maybeSingle();
-
-      if (adminError || !admin) {
-        await supabase.auth.signOut();
-        errEl.textContent = 'Akaunti hii haina ruhusa ya SimuPesa Admin.';
-        return;
-      }
-
-      errEl.textContent = '';
-      window.location.hash = 'admin';
-      await refreshApplicantsCache();
-      showView('adminDashboardView');
-
-    } catch (error) {
-      console.error('Admin sign-in error:', error);
-      errEl.textContent = error.message === 'Invalid login credentials'
-        ? 'Email au password si sahihi.'
-        : 'Imeshindikana kuingia. Jaribu tena.';
-    } finally {
-      submitBtn.disabled = false;
-      submitBtn.textContent = 'Ingia';
-    }
-  });
-
-  // ============================================================
-  // 5.  ADMIN: REGISTER SELLER (insert into sellers)
-  // ============================================================
-
-  document.getElementById('registerForm').addEventListener('submit', async function (e) {
-    e.preventDefault();
-    const first = document.getElementById('r_first').value.trim();
-    const middle = document.getElementById('r_middle').value.trim();
-    const last = document.getElementById('r_last').value.trim();
-    const phone = document.getElementById('r_phone').value.trim();
-    const errEl = document.getElementById('registerError');
-
-    if (!first || !last || !phone) {
-      errEl.textContent = 'Jaza jina la kwanza, la mwisho na namba ya simu.';
-      return;
-    }
-
-    // Generate a 6-digit passkey
-    const passkey = String(Math.floor(100000 + Math.random() * 900000));
-
-    // Use the register_seller RPC (needs to be created in Supabase)
-    const { data, error } = await supabase.rpc('register_seller', {
-      p_full_name: [first, middle, last].filter(Boolean).join(' '),
-      p_phone: phone,
-      p_passkey: passkey
-    });
-
-    if (error) {
-      if (error.message.includes('duplicate')) {
-        errEl.textContent = 'Namba hii tayari imesajiliwa.';
-      } else {
-        errEl.textContent = 'Imeshindikana kumsajili muuzaji. Jaribu tena.';
-      }
-      console.error('register_seller error:', error);
-      return;
-    }
-
-    errEl.textContent = '';
-    document.getElementById('registerForm').reset();
-    document.getElementById('passkeyCode').textContent = passkey;
-    document.getElementById('passkeyDisplay').classList.add('is-active');
-
-    await refreshApplicantsCache();
-    renderAdminTables();
-  });
-
-  // ============================================================
-  // 6.  APPLICATION SUBMISSION (insert applications + photos)
-  // ============================================================
-
-  // The form submit handler already exists; we override it to use Supabase.
-  const sellForm = document.getElementById('sellForm');
+  /* ===================== FORM SUBMIT -> CONFIRM MODAL ===================== */
+  var sellForm = document.getElementById('sellForm');
   sellForm.addEventListener('submit', function (e) {
     e.preventDefault();
-    const errEl = document.getElementById('formError');
+    var errEl = document.getElementById('formError');
     if (!frontPhotoData || !backPhotoData) {
       errEl.textContent = 'Tafadhali ambatanisha picha zote mbili za simu (mbele na nyuma) kabla ya kutuma.';
       document.getElementById('photoFrontSlot').scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -2312,249 +2333,362 @@
     document.getElementById('confirmModal').classList.add('is-active');
   });
 
-  // Override finalizeSubmission to use Supabase
-  window.finalizeSubmission = async function () {
-    const confirmBtn = document.getElementById('confirmSubmitBtn');
-    const confirmErr = document.getElementById('confirmError');
+  function closeConfirmModal(){
+    document.getElementById('confirmModal').classList.remove('is-active');
+  }
+
+  /* ===================== PDF GENERATION ===================== */
+  function buildLine(doc, y, label, value){
+    doc.setFont(undefined, 'bold');
+    doc.text(String(label) + ':', 14, y);
+    doc.setFont(undefined, 'normal');
+    doc.text(String(value || '-'), 72, y, { maxWidth: 124 });
+    return y + 6;
+  }
+
+  function imgFormatFromDataUrl(url){
+    return url.indexOf('image/png') !== -1 ? 'PNG' : 'JPEG';
+  }
+
+  function generatePDF(data, photos){
+    photos = photos || { front: frontPhotoData, back: backPhotoData, supporting: supportingPhotoData };
+    var doc = new jspdf.jsPDF();
+    var y = 18;
+
+    doc.setFontSize(16);
+    doc.setFont(undefined, 'bold');
+    doc.text('FOMU YA KUUZA SIMU USED — SimuPesa', 14, y);
+    y += 10;
+    doc.setFontSize(10);
+    doc.setFont(undefined, 'normal');
+    doc.text('ID ya Maombi: ' + (data.applicationId || '-'), 14, y);
+    y += 8;
+
+    function section(title, rows){
+      if (y > 268) { doc.addPage(); y = 18; }
+      doc.setFontSize(12);
+      doc.setFont(undefined, 'bold');
+      doc.text(title, 14, y);
+      y += 7;
+      doc.setFontSize(10);
+      rows.forEach(function (r) {
+        if (y > 282) { doc.addPage(); y = 18; }
+        y = buildLine(doc, y, r[0], r[1]);
+      });
+      y += 4;
+    }
+
+    section('A. Taarifa za Muuzaji', [
+      ['Jina kamili', data.a.fullname], ['Namba ya simu', data.a.phone], ['NIDA', data.a.nida],
+      ['Eneo anapoishi', data.a.location], ['Tarehe ya kuuza', data.a.saledate], ['Sababu', data.a.reason]
+    ]);
+    section('B. Utambulisho wa Simu', [
+      ['Brand', data.b.brand], ['Model', data.b.model], ['Model Number', data.b.modelnum],
+      ['IMEI 1', data.b.imei1], ['IMEI 2', data.b.imei2], ['Serial Number', data.b.serial],
+      ['Storage', data.b.storage], ['Network', data.b.network], ['Dual SIM', data.b.dualsim]
+    ]);
+    section('C. Hali ya Nje ya Simu', [
+      ['Screen', data.c.screen], ['Touch', data.c.touch], ['Frame/Body', data.c.frame],
+      ['Back Cover', data.c.backcover], ['Camera Glass', data.c.camglass], ['Camera Lens', data.c.camlens],
+      ['Buttons', data.c.buttons], ['Charging Port', data.c.chargeport], ['SIM Tray', data.c.simtray],
+      ['Speaker', data.c.speaker], ['Microphone', data.c.mic]
+    ]);
+    section('D. Battery', [
+      ['Battery Health', data.d.health + '%'], ['Imebadilishwa', data.d.replaced],
+      ['Inachaji vizuri', data.d.chargesok], ['Inapata joto', data.d.overheats], ['Inashuka haraka', data.d.drainsfast]
+    ]);
+    section('F. Camera', [
+      ['Front Camera', data.f.front], ['Main Camera', data.f.main], ['Ultrawide', data.f.ultrawide],
+      ['Telephoto', data.f.telephoto], ['Flash', data.f.flash], ['Video Recording', data.f.video], ['Camera Focus', data.f.focus]
+    ]);
+    section('G. Mfumo & Security', [
+      ['Inawaka vizuri', data.g.powers], ['Fingerprint', data.g.fingerprint], ['Face ID', data.g.faceid],
+      ['Wi-Fi', data.g.wifi], ['Bluetooth', data.g.bt], ['GPS', data.g.gps], ['Mobile Network', data.g.network],
+      ['Calls', data.g.calls], ['SMS', data.g.sms], ['Internet/Data', data.g.internet]
+    ]);
+    section('H. Historia ya Simu', [
+      ['Imewahi kufunguliwa', data.h.opened], ['Imewahi kutengenezwa', data.h.repaired],
+      ['Screen kubadilishwa', data.h.screenchanged], ['Battery kubadilishwa', data.h.batterychanged],
+      ['Imewahi kuanguka sana', data.h.dropped], ['Imewahi kuingia maji', data.h.water], ['Spare parts', data.h.spareparts]
+    ]);
+    section('I. Vifaa Vinavyoambatana', [
+      ['Receipt', data.i.receipt ? 'Ndiyo' : 'Hapana'], ['Warranty Card', data.i.warranty ? 'Ndiyo' : 'Hapana'],
+      ['Purchase Invoice', data.i.invoice ? 'Ndiyo' : 'Hapana'], ['Other', data.i.other]
+    ]);
+    section('K. Bei', [
+      ['Bei anayotaka muuzaji', 'TZS ' + (data.k.asking || '-')],
+      ['Bei ya mwisho', 'Hukubaliwa kati ya muuzaji na mnunuzi']
+    ]);
+    section('Uthibitisho wa Muuzaji', [
+      ['Sahihi (jina)', data.conf.signature], ['Tarehe', data.conf.date]
+    ]);
+
+    doc.addPage();
+    doc.setFontSize(12);
+    doc.setFont(undefined, 'bold');
+    doc.text('Picha za Simu', 14, 18);
+    try {
+      doc.addImage(photos.front, imgFormatFromDataUrl(photos.front), 14, 26, 85, 110);
+      doc.setFontSize(10);
+      doc.setFont(undefined, 'normal');
+      doc.text('Mbele ya simu', 14, 142);
+    } catch (e) { console.error('front image error', e); }
+    try {
+      doc.addImage(photos.back, imgFormatFromDataUrl(photos.back), 108, 26, 85, 110);
+      doc.setFontSize(10);
+      doc.setFont(undefined, 'normal');
+      doc.text('Nyuma ya simu', 108, 142);
+    } catch (e) { console.error('back image error', e); }
+
+    if (photos.supporting) {
+      doc.addPage();
+      doc.setFontSize(12);
+      doc.setFont(undefined, 'bold');
+      doc.text('Picha ya Warranty / Receipt / Invoice', 14, 18);
+      try { doc.addImage(photos.supporting, imgFormatFromDataUrl(photos.supporting), 14, 26, 180, 150); }
+      catch (e) { console.error('supporting image error', e); }
+    }
+
+    return doc;
+  }
+
+  /* ===================== FINALIZE (Dhibitisha) ===================== */
+  var sellerPdfUrl = null;
+
+  async function finalizeSubmission(){
+    var confirmBtn = document.getElementById('confirmSubmitBtn');
+    var confirmErr = document.getElementById('confirmError');
+    var session = getSellerSession();
+    confirmErr.textContent = '';
+
+    if (!session || !session.token) {
+      confirmErr.textContent = 'Muda wa kuingia umeisha. Tafadhali ingia tena kwa passkey yako.';
+      return;
+    }
+
     confirmBtn.disabled = true;
-    confirmBtn.textContent = 'Inatengeneza...';
+    confirmBtn.textContent = 'Inapakia picha...';
 
     try {
-      const data = collectFormData();
-      const photos = { front: frontPhotoData, back: backPhotoData, supporting: supportingPhotoData };
+      var data = collectFormData();
+      var photos = { front: frontPhotoData, back: backPhotoData, supporting: supportingPhotoData };
 
-      // 1. Upload photos to Cloudinary
-      const uploadPhoto = (base64) => {
-        if (!base64) return null;
-        const formData = new FormData();
-        formData.append('file', base64);
-        formData.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
-        formData.append('folder', CLOUDINARY_SIMUPESA_FOLDER);
-        return fetch(`https://api.cloudinary.com/v1_1/${CLOUDINARY_CLOUD_NAME}/image/upload`, {
-          method: 'POST',
-          body: formData
-        }).then(res => res.json()).then(result => result.secure_url || null);
-      };
+      // Photos go to Cloudinary first — the Edge Function only stores URLs.
+      var frontUrl = await uploadToCloudinary(photos.front, data.applicationId + '-front');
+      var backUrl = await uploadToCloudinary(photos.back, data.applicationId + '-back');
+      var supportingUrl = photos.supporting ? await uploadToCloudinary(photos.supporting, data.applicationId + '-supporting') : null;
 
-      const [frontUrl, backUrl, supportingUrl] = await Promise.all([
-        uploadPhoto(photos.front),
-        uploadPhoto(photos.back),
-        uploadPhoto(photos.supporting)
-      ]);
+      confirmBtn.textContent = 'Inatuma fomu...';
+      await callRpc('rpc_submit_application', {
+        p_token: session.token,
+        p_form: data,
+        p_front_url: frontUrl,
+        p_back_url: backUrl,
+        p_supporting_url: supportingUrl
+      });
 
-      if (!frontUrl || !backUrl) {
-        throw new Error('Picha za simu hazikupakia. Jaribu tena.');
-      }
-
-      // 2. Insert application
-      const sellerId = currentApplicant ? currentApplicant.id : null;
-      if (!sellerId) {
-        throw new Error('Muuzaji hajathibitishwa. Ingia tena.');
-      }
-
-      const appPayload = {
-        seller_id: sellerId,
-        a_full_name: data.a.fullname,
-        a_phone: data.a.phone,
-        a_nida: data.a.nida,
-        a_location: data.a.location,
-        a_sale_date: data.a.saledate,
-        a_reason: data.a.reason || null,
-        b_brand: data.b.brand,
-        b_model: data.b.model,
-        b_model_number: data.b.modelnum || null,
-        b_imei1: data.b.imei1 || null,
-        b_imei2: data.b.imei2 || null,
-        b_serial: data.b.serial || null,
-        b_storage: data.b.storage || '128GB',
-        b_network: data.b.network || 'unlocked',
-        b_dual_sim: data.b.dualsim || 'hapana',
-        c_screen: data.c.screen || 'nzuri',
-        c_touch: data.c.touch || 'nzima',
-        c_frame: data.c.frame || 'nzuri',
-        c_backcover: data.c.backcover || 'nzuri',
-        c_camera_glass: data.c.camglass || 'nzuri',
-        c_camera_lens: data.c.camlens || 'nzima',
-        c_buttons: data.c.buttons || 'nzima',
-        c_charging_port: data.c.chargeport || 'nzuri',
-        c_sim_tray: data.c.simtray || 'nzima',
-        c_speaker: data.c.speaker || 'nzima',
-        c_microphone: data.c.mic || 'nzima',
-        d_battery_health: parseInt(data.d.health) || 80,
-        d_replaced: data.d.replaced || 'hajui',
-        d_charges_ok: data.d.chargesok || 'ndiyo',
-        d_overheats: data.d.overheats || 'hapana',
-        d_drains_fast: data.d.drainsfast || 'hapana',
-        f_front: data.f.front || 'nzima',
-        f_main: data.f.main || 'nzima',
-        f_ultrawide: data.f.ultrawide || 'nzima',
-        f_telephoto: data.f.telephoto || 'nzima',
-        f_flash: data.f.flash || 'nzima',
-        f_video: data.f.video || 'nzima',
-        f_focus: data.f.focus || 'nzima',
-        g_powers_on: data.g.powers || 'ndiyo',
-        g_fingerprint: data.g.fingerprint || 'nzima',
-        g_face_id: data.g.faceid || 'haina',
-        g_wifi: data.g.wifi || 'nzima',
-        g_bluetooth: data.g.bt || 'nzima',
-        g_gps: data.g.gps || 'nzima',
-        g_mobile_network: data.g.network || 'nzima',
-        g_calls: data.g.calls || 'nzima',
-        g_sms: data.g.sms || 'nzima',
-        g_internet: data.g.internet || 'nzima',
-        h_opened: data.h.opened || 'hajui',
-        h_repaired: data.h.repaired || 'hapana',
-        h_screen_changed: data.h.screenchanged || 'hapana',
-        h_battery_changed: data.h.batterychanged || 'hapana',
-        h_dropped_hard: data.h.dropped || 'hapana',
-        h_water_damage: data.h.water || 'hajui',
-        h_spare_parts: data.h.spareparts || null,
-        i_has_receipt: data.i.receipt || false,
-        i_has_warranty: data.i.warranty || false,
-        i_has_invoice: data.i.invoice || false,
-        i_other: data.i.other || null,
-        k_asking_price: parseFloat(data.k.asking) || 0,
-        conf_signature: data.conf.signature || currentApplicant.fullName,
-        conf_date: data.conf.date || new Date().toISOString().split('T')[0],
-        submitted_at: new Date().toISOString()
-      };
-
-      const { data: appResult, error: appError } = await supabase
-        .from('applications')
-        .insert([appPayload])
-        .select('id')
-        .single();
-
-      if (appError) throw appError;
-
-      // 3. Insert photos
-      const photoPayload = {
-        application_id: appResult.id,
-        front_path: frontUrl,
-        back_path: backUrl,
-        supporting_path: supportingUrl || null
-      };
-
-      const { error: photoError } = await supabase
-        .from('application_photos')
-        .insert([photoPayload]);
-
-      if (photoError) throw photoError;
-
-      // 4. Generate PDF (client-side) for the seller to download/share
-      const doc = generatePDF(data, photos);
+      // Seller's own downloadable copy — built from the data already in
+      // memory, so it doesn't need to wait on a round trip to fetch it back.
+      var doc = generatePDF(data, photos);
       if (sellerPdfUrl) URL.revokeObjectURL(sellerPdfUrl);
       sellerPdfUrl = URL.createObjectURL(doc.output('blob'));
 
-      // Success!
       document.getElementById('confirmModal').classList.remove('is-active');
       document.getElementById('successModal').classList.add('is-active');
-
     } catch (err) {
-      console.error('Submission error:', err);
-      confirmErr.textContent = err.message || 'Kuna hitilafu katika kutuma maombi. Jaribu tena.';
+      console.error('Submission failed:', err);
+      if (err.code === 'ALREADY_SUBMITTED') {
+        confirmErr.textContent = 'Umeshatuma fomu hii tayari. Wasiliana na admin kama unahitaji kubadilisha.';
+      } else if (err.code === 'SESSION_INVALID_OR_EXPIRED') {
+        confirmErr.textContent = 'Muda wa kuingia umeisha. Tafadhali ingia tena kwa passkey yako.';
+      } else {
+        confirmErr.textContent = 'Kuna hitilafu katika kutuma fomu. Angalia intaneti yako kisha jaribu tena.';
+      }
     } finally {
       confirmBtn.disabled = false;
       confirmBtn.textContent = 'Dhibitisha';
     }
-  };
-
-  // ============================================================
-  // 7.  ADMIN DASHBOARD (uses Supabase for all tables)
-  // ============================================================
-
-  async function renderAdminTables() {
-    await refreshApplicantsCache();
-    const applicants = applicantsCache;
-
-    // Build stats
-    const completed = applicants.filter(a => a.response && a.response.status);
-    const successful = applicants.filter(a => a.loginStatus === 'success');
-    document.getElementById('statApplicants').textContent = applicants.length;
-    document.getElementById('statCompleted').textContent = completed.length;
-    document.getElementById('statPending').textContent = applicants.filter(a => a.loginStatus === 'pending').length;
-    document.getElementById('statLoginRate').textContent = applicants.length
-      ? Math.round((successful.length / applicants.length) * 100) + '%'
-      : '0%';
-
-    // Render applicants table
-    const tbody = document.getElementById('applicantsTbody');
-    const emptyNote = document.getElementById('applicantsEmpty');
-    tbody.innerHTML = '';
-    if (applicants.length === 0) {
-      emptyNote.style.display = 'block';
-    } else {
-      emptyNote.style.display = 'none';
-      const sorted = getSortedRows('applicants', applicants);
-      sorted.forEach(a => {
-        const tr = document.createElement('tr');
-        const statusHtml = a.loginStatus === 'success'
-          ? '<span class="status-cell"><span class="status-icon ok" title="Ameingia">&#10003;</span><span class="status-text">Ameingia</span></span>'
-          : (a.loginStatus === 'failed'
-            ? '<span class="status-cell"><span class="status-icon no" title="Jaribio limekataa">&#10007;</span><span class="status-text">Haikufaulu</span></span>'
-            : '<span class="status-cell"><span class="status-icon no" style="background:rgba(98,106,124,0.12);color:var(--muted);" title="Bado hajaingia">&#8212;</span><span class="status-text">Anasubiri</span></span>');
-        const appId = a.applicationId || '—';
-        const responseHtml = !a.response
-          ? `<button class="response-button" type="button" onclick="openAdminResponse('${escapeHtml(appId)}')">Hajajibiwa</button>`
-          : (a.response.status === 'approved'
-            ? `<button class="response-button response-approved" type="button" onclick="openAdminResponse('${escapeHtml(appId)}')">Imekubaliwa</button>`
-            : `<button class="response-button response-rejected" type="button" onclick="openAdminResponse('${escapeHtml(appId)}')">Imekataliwa</button>`);
-        tr.innerHTML = `
-          <td><span class="application-id">${escapeHtml(appId)}</span></td>
-          <td><button class="table-link" type="button" onclick="showApplicationDetails('${escapeHtml(appId)}')">${escapeHtml(a.fullName)}</button></td>
-          <td>${escapeHtml(a.phone)}</td>
-          <td>••••••</td>
-          <td>${statusHtml}</td>
-          <td>${responseHtml}</td>
-          <td><button class="delete-application" type="button" onclick="deleteSellerApplication('${escapeHtml(appId)}')">Futa</button></td>
-        `;
-        tbody.appendChild(tr);
-      });
-    }
-
-    // Render completed (printed) table
-    const completedList = await loadCompleted();
-    const ptbody = document.getElementById('printedTbody');
-    const pEmpty = document.getElementById('printedEmpty');
-    ptbody.innerHTML = '';
-    if (completedList.length === 0) {
-      pEmpty.style.display = 'block';
-    } else {
-      pEmpty.style.display = 'none';
-      const sorted = getSortedRows('printed', completedList);
-      sorted.forEach(c => {
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
-          <td><span class="application-id">${escapeHtml(c.applicationId || '—')}</span></td>
-          <td><button class="table-link" type="button" onclick="showApplicationDetails('${escapeHtml(c.applicationId || '')}')">${escapeHtml(c.fullname)}</button></td>
-          <td>${escapeHtml(c.phone)}</td>
-          <td>${escapeHtml(c.completedAt)}</td>
-        `;
-        ptbody.appendChild(tr);
-      });
-    }
-
-    updateSortCarets('applicants');
-    updateSortCarets('printed');
-    filterAdminTable('applicants');
-    filterAdminTable('printed');
   }
 
-  // ============================================================
-  // 8.  ADMIN RESPONSE (approve/reject)
-  // ============================================================
+  function openSellerPdfViewer(){
+    if (!sellerPdfUrl) return;
+    document.getElementById('sellerPdfFrame').src = sellerPdfUrl;
+    document.getElementById('sellerPdfModal').classList.add('is-active');
+  }
 
-  window.openAdminResponse = async function (applicationId) {
-    respondingApplicationId = applicationId;
-    const applicant = applicantsCache.find(a => a.applicationId === applicationId);
-    if (!applicant) return;
+  function closeSellerPdfViewer(){ document.getElementById('sellerPdfModal').classList.remove('is-active'); }
 
-    document.getElementById('adminResponseApplicant').textContent = applicant.fullName + ' · ' + applicationId;
+  function closeSuccessModal(){
+    document.getElementById('successModal').classList.remove('is-active');
+    sellForm.reset();
+    frontPhotoData = null;
+    backPhotoData = null;
+    supportingPhotoData = null;
+    document.getElementById('photoFrontSlot').classList.remove('has-photo');
+    document.getElementById('photoBackSlot').classList.remove('has-photo');
+    document.getElementById('photoFrontPreview').src = '';
+    document.getElementById('photoBackPreview').src = '';
+    document.getElementById('photoSupportingSlot').classList.remove('has-photo');
+    document.getElementById('photoSupportingPreview').src = '';
+    closeSellerPdfViewer();
+    if (sellerPdfUrl) { URL.revokeObjectURL(sellerPdfUrl); sellerPdfUrl = null; }
+    showView('siteView');
+  }
+
+  /* ===================== ADMIN LOGIN ===================== */
+  async function isSimuPesaAdmin(userId){
+    if (!supabaseClient || !userId) return false;
+    var result = await supabaseClient.from('admin_profiles').select('id').eq('id', userId).maybeSingle();
+    if (result.error) throw result.error;
+    return Boolean(result.data);
+  }
+
+  async function openAdminPortal(){
+    if (!supabaseClient) { showView('adminLoginView'); return; }
+    try {
+      var sessionResult = await supabaseClient.auth.getSession();
+      var user = sessionResult.data.session && sessionResult.data.session.user;
+      if (user && await isSimuPesaAdmin(user.id)) {
+        window.location.hash = 'admin';
+        showView('adminDashboardView');
+      } else {
+        window.location.hash = 'admin';
+        showView('adminLoginView');
+      }
+    } catch (error) {
+      console.warn('Admin portal check failed:', error);
+      showView('adminLoginView');
+    }
+  }
+
+  document.getElementById('adminLoginForm').addEventListener('submit', async function (e) {
+    e.preventDefault();
+    var email = document.getElementById('adminEmail').value.trim().toLowerCase();
+    var pass = document.getElementById('adminPassword').value;
+    var errEl = document.getElementById('adminLoginError');
+    var submitBtn = this.querySelector('button[type="submit"]');
+
+    if (!supabaseClient) {
+      errEl.textContent = 'Muunganisho wa Supabase haujapatikana. Angalia intaneti, kisha jaribu tena.';
+      return;
+    }
+
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Inaingia...';
+    try {
+      var authResult = await supabaseClient.auth.signInWithPassword({ email: email, password: pass });
+      if (authResult.error) throw authResult.error;
+      if (!await isSimuPesaAdmin(authResult.data.user.id)) {
+        await supabaseClient.auth.signOut();
+        errEl.textContent = 'Akaunti hii haina ruhusa ya SimuPesa Admin.';
+        return;
+      }
+      errEl.textContent = '';
+      document.getElementById('adminLoginForm').reset();
+      window.location.hash = 'admin';
+      showView('adminDashboardView');
+    } catch (error) {
+      console.error('Admin sign-in error:', error);
+      errEl.textContent = error.message === 'Invalid login credentials' ? 'Email au password si sahihi.' : 'Imeshindikana kuingia. Jaribu tena.';
+    } finally {
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Ingia';
+    }
+  });
+
+  async function adminLogout(){
+    if (supabaseClient) await supabaseClient.auth.signOut();
+    history.replaceState(null, '', window.location.pathname + window.location.search);
+    showView('siteView');
+  }
+
+  /* ===================== ADMIN: REGISTER SELLER ===================== */
+  document.getElementById('registerForm').addEventListener('submit', async function (e) {
+    e.preventDefault();
+    var first = document.getElementById('r_first').value.trim();
+    var middle = document.getElementById('r_middle').value.trim();
+    var last = document.getElementById('r_last').value.trim();
+    var phone = document.getElementById('r_phone').value.trim();
+    var errEl = document.getElementById('registerError');
+    var submitBtn = this.querySelector('button[type="submit"]');
+
+    errEl.textContent = '';
+    if (!first || !last || !phone) {
+      errEl.textContent = 'Jaza jina la kwanza, la mwisho na namba ya simu.';
+      return;
+    }
+    if (!supabaseClient) { errEl.textContent = 'Muunganisho wa Supabase haujapatikana.'; return; }
+
+    var fullName = [first, middle, last].filter(Boolean).join(' ');
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Inasajili...';
+
+    try {
+      var result = await callRpc('rpc_register_seller', { p_full_name: fullName, p_phone: phone });
+      if (!result) throw new Error('REGISTER_FAILED');
+
+      document.getElementById('registerForm').reset();
+      document.getElementById('passkeyCode').textContent = result.passkey;
+      document.getElementById('passkeyDisplay').classList.add('is-active');
+      await renderAdminTables();
+    } catch (error) {
+      console.error('Seller registration failed:', error);
+      errEl.textContent = error.code === 'PHONE_ALREADY_REGISTERED'
+        ? 'Namba hii tayari imesajiliwa kwa muuzaji mwingine.'
+        : (error.code === 'NOT_AN_ADMIN' ? 'Akaunti hii haina ruhusa ya Admin.' : 'Imeshindikana kusajili. Jaribu tena.');
+    } finally {
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Sajili & Tengeneza Passkey';
+    }
+  });
+
+  function copyPasskey(){
+    var code = document.getElementById('passkeyCode').textContent.trim();
+    if (!code) return;
+    var button = document.getElementById('copyPasskeyBtn');
+    function done(){
+      button.textContent = 'Imenakiliwa ✓';
+      setTimeout(function(){ button.textContent = 'Nakili passkey'; }, 1800);
+    }
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(code).then(done).catch(function(){ window.prompt('Nakili passkey hii:', code); });
+    } else {
+      window.prompt('Nakili passkey hii:', code);
+    }
+  }
+
+  var respondingApplication = null; // { applicationId (text), applicationPk (uuid) }
+  var selectedResponseStatus = null;
+
+  function openAdminResponse(applicationId){
+    var row = adminOverviewCache.find(function(item){ return item.application_id === applicationId; });
+    if (!row) return;
+    if (!row.application_id_pk) {
+      window.alert('Muuzaji huyu bado hajatuma fomu. Huwezi kumjibu kabla ya kutuma.');
+      return;
+    }
+    respondingApplication = { applicationId: applicationId, applicationPk: row.application_id_pk };
+    document.getElementById('adminResponseApplicant').textContent = row.full_name + ' · ' + applicationId;
     document.getElementById('adminResponseModal').classList.add('is-active');
     resetResponseModal();
-  };
+  }
 
-  window.chooseResponse = function (status) {
+  function closeAdminResponse(){
+    document.getElementById('adminResponseModal').classList.remove('is-active');
+    respondingApplication = null;
+    selectedResponseStatus = null;
+  }
+
+  function resetResponseModal(){
+    selectedResponseStatus = null;
+    document.getElementById('responseChoices').style.display = 'flex';
+    document.getElementById('adminResponseForm').style.display = 'none';
+    document.getElementById('responseCloseRow').style.display = 'flex';
+    document.getElementById('adminResponseError').textContent = '';
+    document.getElementById('adminResponseForm').reset();
+  }
+
+  function chooseResponse(status){
     selectedResponseStatus = status;
     document.getElementById('responseChoices').style.display = 'none';
     document.getElementById('adminResponseForm').style.display = 'block';
@@ -2562,416 +2696,410 @@
     document.getElementById('responseReasonLabel').textContent = status === 'approved' ? 'Sababu ya kukubaliwa *' : 'Sababu ya kukataliwa *';
     document.getElementById('agreedPriceField').style.display = status === 'approved' ? 'block' : 'none';
     document.getElementById('responseAgreedPrice').required = status === 'approved';
-  };
+  }
 
-  document.getElementById('adminResponseForm').addEventListener('submit', async function (e) {
+  document.getElementById('adminResponseForm').addEventListener('submit', async function(e){
     e.preventDefault();
-    const errEl = document.getElementById('adminResponseError');
+    var errEl = document.getElementById('adminResponseError');
+    var submitBtn = this.querySelector('button[type="submit"]');
+    if (!respondingApplication || !selectedResponseStatus) return;
 
-    if (!respondingApplicationId || !selectedResponseStatus) {
-      errEl.textContent = 'Hitilafu. Jaribu tena.';
-      return;
+    var reason = document.getElementById('responseReason').value.trim();
+    var agreedPrice = selectedResponseStatus === 'approved'
+      ? (parseFloat(document.getElementById('responseAgreedPrice').value) || null)
+      : null;
+
+    if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Inatuma...'; }
+    try {
+      var sessionResult = await supabaseClient.auth.getSession();
+      var adminId = sessionResult.data.session && sessionResult.data.session.user && sessionResult.data.session.user.id;
+      var result = await supabaseClient.from('application_responses').upsert({
+        application_id: respondingApplication.applicationPk,
+        status: selectedResponseStatus,
+        reason: reason,
+        agreed_price: agreedPrice,
+        responded_by: adminId || null
+      }, { onConflict: 'application_id' });
+      if (result.error) throw result.error;
+      closeAdminResponse();
+      await renderAdminTables();
+    } catch (error) {
+      console.error('Saving admin response failed:', error);
+      errEl.textContent = 'Imeshindikana kuhifadhi majibu. Jaribu tena.';
+    } finally {
+      if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Tuma majibu'; }
     }
-
-    // Find the application_id (PK) from the seller's application
-    const { data: app, error: appErr } = await supabase
-      .from('applications')
-      .select('id')
-      .eq('application_id', respondingApplicationId)
-      .maybeSingle();
-
-    if (appErr || !app) {
-      errEl.textContent = 'Maombi hayakupatikana.';
-      return;
-    }
-
-    const payload = {
-      application_id: app.id,
-      status: selectedResponseStatus,
-      reason: document.getElementById('responseReason').value.trim(),
-      agreed_price: selectedResponseStatus === 'approved'
-        ? parseFloat(document.getElementById('responseAgreedPrice').value) || null
-        : null,
-      responded_at: new Date().toISOString()
-    };
-
-    const { error } = await supabase
-      .from('application_responses')
-      .upsert([payload], { onConflict: 'application_id' });
-
-    if (error) {
-      errEl.textContent = 'Imeshindikana kutuma jibu. Jaribu tena.';
-      console.error('Response error:', error);
-      return;
-    }
-
-    errEl.textContent = '';
-    closeAdminResponse();
-    await refreshApplicantsCache();
-    renderAdminTables();
   });
 
-  window.deleteSellerApplication = async function (applicationId) {
-    if (!window.confirm('Unataka kufuta maombi ya ' + applicationId + '? Hatua hii haiwezi kurejeshwa.')) return;
+  /* ===================== ADMIN: TABLES ===================== */
+  var adminTableSort = { applicants: { key: '', direction: 'asc' }, printed: { key: '', direction: 'asc' } };
+  var adminOverviewCache = []; // rows from public.admin_seller_overview, refreshed by renderAdminTables()
 
-    const { error } = await supabase
-      .from('sellers')
-      .delete()
-      .eq('application_id', applicationId);
+  var ADMIN_SORT_KEY_MAP = { applicationId: 'application_id', fullName: 'full_name', fullname: 'full_name', phone: 'phone', loginStatus: 'login_status', completedAt: 'submitted_at' };
 
-    if (error) {
-      alert('Imeshindikana kufuta. Jaribu tena.');
-      console.error('Delete error:', error);
-      return;
-    }
-
-    await refreshApplicantsCache();
-    renderAdminTables();
-  };
-
-  // ============================================================
-  // 9.  APPLICATION DETAILS (fetch full record from Supabase)
-  // ============================================================
-
-  window.showApplicationDetails = async function (applicationId) {
-    const modal = document.getElementById('applicationDetailsModal');
-    const body = document.getElementById('applicationDetailsBody');
-    const subtitle = document.getElementById('applicationDetailsSubtitle');
-    body.innerHTML = '';
-
-    const full = await fetchFullApplication(applicationId);
-
-    if (!full) {
-      selectedApplication = null;
-      document.getElementById('applicationDetailsTitle').textContent = 'Maombi hayajakamilika';
-      subtitle.textContent = 'ID: ' + (applicationId || 'Haijapatikana');
-      detailRow(body, 'Hali', 'Muuzaji bado hajakamilisha na kutuma fomu hii.');
-      document.getElementById('inspectorPdfBtn').disabled = true;
-      document.getElementById('adminPdfBtn').disabled = true;
-      modal.classList.add('is-active');
-      return;
-    }
-
-    selectedApplication = full;
-    document.getElementById('inspectorPdfBtn').disabled = false;
-    document.getElementById('adminPdfBtn').disabled = false;
-    document.getElementById('applicationDetailsTitle').textContent = full.a_full_name || full.seller?.full_name || 'Muuzaji';
-    subtitle.textContent = 'ID ya Maombi: ' + (full.application_id || applicationId) +
-      ' · Imekamilika: ' + new Date(full.submitted_at).toLocaleString('sw-TZ');
-
-    // Build details from the full application object
-    const d = full;
-    const sections = [
-      ['A. Taarifa za Muuzaji', [['Namba ya simu', d.a_phone], ['NIDA', d.a_nida], ['Eneo', d.a_location], ['Tarehe ya kuuza', d.a_sale_date], ['Sababu', d.a_reason]]],
-      ['B. Utambulisho wa Simu', [['Brand', d.b_brand], ['Model', d.b_model], ['Model Number', d.b_model_number], ['IMEI1', d.b_imei1], ['IMEI2', d.b_imei2], ['Serial', d.b_serial], ['Storage', d.b_storage], ['Network', d.b_network], ['Dual SIM', d.b_dual_sim]]],
-      ['C. Hali ya Nje', [['Screen', d.c_screen], ['Touch', d.c_touch], ['Frame', d.c_frame], ['Back Cover', d.c_backcover], ['Camera Glass', d.c_camera_glass], ['Camera Lens', d.c_camera_lens], ['Buttons', d.c_buttons], ['Charging Port', d.c_charging_port], ['SIM Tray', d.c_sim_tray], ['Speaker', d.c_speaker], ['Microphone', d.c_microphone]]],
-      ['D. Battery', [['Health', d.d_battery_health + '%'], ['Replaced', d.d_replaced], ['Charges OK', d.d_charges_ok], ['Overheats', d.d_overheats], ['Drains Fast', d.d_drains_fast]]],
-      ['F. Camera', [['Front', d.f_front], ['Main', d.f_main], ['Ultrawide', d.f_ultrawide], ['Telephoto', d.f_telephoto], ['Flash', d.f_flash], ['Video', d.f_video], ['Focus', d.f_focus]]],
-      ['G. Mfumo & Security', [['Powers On', d.g_powers_on], ['Fingerprint', d.g_fingerprint], ['Face ID', d.g_face_id], ['Wi-Fi', d.g_wifi], ['Bluetooth', d.g_bluetooth], ['GPS', d.g_gps], ['Mobile Network', d.g_mobile_network], ['Calls', d.g_calls], ['SMS', d.g_sms], ['Internet', d.g_internet]]],
-      ['H. Historia ya Simu', [['Opened', d.h_opened], ['Repaired', d.h_repaired], ['Screen Changed', d.h_screen_changed], ['Battery Changed', d.h_battery_changed], ['Dropped Hard', d.h_dropped_hard], ['Water Damage', d.h_water_damage], ['Spare Parts', d.h_spare_parts]]],
-      ['I. Vifaa', [['Receipt', d.i_has_receipt ? 'Ndiyo' : 'Hapana'], ['Warranty', d.i_has_warranty ? 'Ndiyo' : 'Hapana'], ['Invoice', d.i_has_invoice ? 'Ndiyo' : 'Hapana'], ['Other', d.i_other]]],
-      ['K. Bei', [['Asking Price', 'TZS ' + (d.k_asking_price || 0)], ['Uthibitisho', [['Signature', d.conf_signature], ['Date', d.conf_date]]]]]
-    ];
-
-    // Fix: handle nested array for K section
-    sections.forEach(([title, rows]) => {
-      if (Array.isArray(rows) && rows.length > 0 && Array.isArray(rows[0])) {
-        detailSection(body, title, rows);
-      } else {
-        // fallback
-        const row = document.createElement('div');
-        row.className = 'detail-row';
-        row.textContent = title + ': ' + JSON.stringify(rows);
-        body.appendChild(row);
-      }
-    });
-
-    modal.classList.add('is-active');
-  };
-
-  // ============================================================
-  // 10. PROFESSIONAL PDF GENERATOR (shared)
-  // ============================================================
-
-  function generateApplicationPDF(application, options = {}) {
-    const doc = new jspdf.jsPDF();
-    const pageWidth = doc.internal.pageSize.getWidth();
-    const pageHeight = doc.internal.pageSize.getHeight();
-    const margin = 14;
-    let y = margin;
-    const audience = options.audience || 'seller';
-
-    // Helper functions
-    function addLine(label, value, x = margin) {
-      if (y > pageHeight - 20) { doc.addPage(); y = margin; }
-      doc.setFont(undefined, 'bold');
-      doc.text(String(label) + ':', x, y);
-      doc.setFont(undefined, 'normal');
-      const val = String(value || '-');
-      const maxWidth = pageWidth - x - margin;
-      const lines = doc.splitTextToSize(val, maxWidth);
-      doc.text(lines, x + 45, y);
-      y += 6 + (lines.length - 1) * 5;
-      return y;
-    }
-
-    function addSection(title, rows) {
-      if (y > pageHeight - 30) { doc.addPage(); y = margin; }
-      doc.setFont(undefined, 'bold');
-      doc.setFontSize(12);
-      doc.text(title, margin, y);
-      y += 6;
-      doc.setFontSize(10);
-      doc.setFont(undefined, 'normal');
-      rows.forEach(([label, value]) => {
-        y = addLine(label, value);
-      });
-      y += 4;
-    }
-
-    // Header
-    doc.setFontSize(16);
-    doc.setFont(undefined, 'bold');
-    doc.text('SimuPesa — Fomu ya Kuuza Simu', margin, y);
-    y += 8;
-
-    // Application ID & Status
-    doc.setFontSize(10);
-    doc.setFont(undefined, 'normal');
-    const appId = application.application_id || '—';
-    doc.text('ID ya Maombi: ' + appId, margin, y);
-    y += 6;
-    doc.text('Imetolewa: ' + new Date().toLocaleString('sw-TZ'), margin, y);
-    y += 6;
-
-    // Status & price if available
-    const resp = application.response || {};
-    if (resp.status) {
-      const statusText = resp.status === 'approved' ? 'Imekubaliwa' : 'Imekataliwa';
-      doc.text('Hali: ' + statusText, margin, y);
-      y += 6;
-      if (resp.agreed_price && resp.status === 'approved') {
-        doc.text('Bei iliyokubaliwa: TZS ' + Number(resp.agreed_price).toLocaleString('en-US'), margin, y);
-        y += 6;
-      }
-      if (resp.reason) {
-        doc.text('Sababu: ' + resp.reason, margin, y);
-        y += 6;
-      }
-    }
-
-    y += 6;
-
-    // Seller info (first page summary)
-    const d = application;
-    addSection('A. Taarifa za Muuzaji', [
-      ['Jina', d.a_full_name || d.seller?.full_name || '—'],
-      ['Namba', d.a_phone || d.seller?.phone || '—'],
-      ['NIDA', d.a_nida || '—'],
-      ['Eneo', d.a_location || '—'],
-      ['Tarehe ya kuuza', d.a_sale_date || '—']
-    ]);
-
-    // Sections B–K
-    const sectionData = [
-      ['B. Utambulisho wa Simu', [
-        ['Brand', d.b_brand], ['Model', d.b_model], ['Model Number', d.b_model_number],
-        ['IMEI1', d.b_imei1], ['IMEI2', d.b_imei2], ['Serial', d.b_serial],
-        ['Storage', d.b_storage], ['Network', d.b_network], ['Dual SIM', d.b_dual_sim]
-      ]],
-      ['C. Hali ya Nje', [
-        ['Screen', d.c_screen], ['Touch', d.c_touch], ['Frame', d.c_frame],
-        ['Back Cover', d.c_backcover], ['Camera Glass', d.c_camera_glass],
-        ['Camera Lens', d.c_camera_lens], ['Buttons', d.c_buttons],
-        ['Charging Port', d.c_charging_port], ['SIM Tray', d.c_sim_tray],
-        ['Speaker', d.c_speaker], ['Microphone', d.c_microphone]
-      ]],
-      ['D. Battery', [
-        ['Health', d.d_battery_health + '%'], ['Replaced', d.d_replaced],
-        ['Charges OK', d.d_charges_ok], ['Overheats', d.d_overheats],
-        ['Drains Fast', d.d_drains_fast]
-      ]],
-      ['F. Camera', [
-        ['Front', d.f_front], ['Main', d.f_main], ['Ultrawide', d.f_ultrawide],
-        ['Telephoto', d.f_telephoto], ['Flash', d.f_flash],
-        ['Video', d.f_video], ['Focus', d.f_focus]
-      ]],
-      ['G. Mfumo & Security', [
-        ['Powers On', d.g_powers_on], ['Fingerprint', d.g_fingerprint],
-        ['Face ID', d.g_face_id], ['Wi-Fi', d.g_wifi], ['Bluetooth', d.g_bluetooth],
-        ['GPS', d.g_gps], ['Mobile Network', d.g_mobile_network],
-        ['Calls', d.g_calls], ['SMS', d.g_sms], ['Internet', d.g_internet]
-      ]],
-      ['H. Historia ya Simu', [
-        ['Opened', d.h_opened], ['Repaired', d.h_repaired],
-        ['Screen Changed', d.h_screen_changed], ['Battery Changed', d.h_battery_changed],
-        ['Dropped Hard', d.h_dropped_hard], ['Water Damage', d.h_water_damage],
-        ['Spare Parts', d.h_spare_parts]
-      ]],
-      ['I. Vifaa Vinavyoambatana', [
-        ['Receipt', d.i_has_receipt ? 'Ndiyo' : 'Hapana'],
-        ['Warranty', d.i_has_warranty ? 'Ndiyo' : 'Hapana'],
-        ['Invoice', d.i_has_invoice ? 'Ndiyo' : 'Hapana'],
-        ['Other', d.i_other]
-      ]],
-      ['K. Bei', [
-        ['Asking Price', 'TZS ' + (d.k_asking_price || 0)],
-        ['Sahihi', d.conf_signature],
-        ['Tarehe', d.conf_date]
-      ]]
-    ];
-
-    sectionData.forEach(([title, rows]) => {
-      addSection(title, rows);
-    });
-
-    // Add photos on separate pages
-    const photos = application.photos || {};
-    const addPhotoPage = (title, url) => {
-      doc.addPage();
-      y = margin;
-      doc.setFontSize(12);
-      doc.setFont(undefined, 'bold');
-      doc.text(title, margin, y);
-      y += 8;
-      if (url) {
-        try {
-          doc.addImage(url, 'JPEG', margin, y, 180, 150);
-        } catch (e) {
-          doc.text('Picha haikuweza kupakuliwa.', margin, y + 10);
-        }
-      } else {
-        doc.text('Hakuna picha iliyowekwa.', margin, y + 10);
-      }
-    };
-
-    if (photos.front_path) addPhotoPage('Picha ya Mbele', photos.front_path);
-    if (photos.back_path) addPhotoPage('Picha ya Nyuma', photos.back_path);
-    if (photos.supporting_path) addPhotoPage('Picha ya Ziada (Warranty/Receipt/Invoice)', photos.supporting_path);
-
-    // Footer with page numbers
-    const totalPages = doc.internal.getNumberOfPages();
-    for (let i = 1; i <= totalPages; i++) {
-      doc.setPage(i);
-      doc.setFontSize(8);
-      doc.setFont(undefined, 'normal');
-      doc.text('SimuPesa · ' + appId + ' · Ukurasa ' + i + '/' + totalPages, margin, pageHeight - 8);
-    }
-
-    return doc;
+  function updateAdminStats(applicants, completed){
+    var successful = applicants.filter(function(a){ return a.login_status === 'success'; }).length;
+    document.getElementById('statApplicants').textContent = applicants.length;
+    document.getElementById('statCompleted').textContent = completed.length;
+    document.getElementById('statPending').textContent = applicants.filter(function(a){ return a.login_status === 'pending'; }).length;
+    document.getElementById('statLoginRate').textContent = applicants.length ? Math.round((successful / applicants.length) * 100) + '%' : '0%';
   }
 
-  // Override the old PDF functions with wrappers
-  window.generatePDF = function (data, photos) {
-    const app = {
-      ...data,
-      photos: photos || {},
-      seller: { full_name: data.a.fullname, phone: data.a.phone }
-    };
-    return generateApplicationPDF(app, { audience: 'seller' });
-  };
-
-  window.downloadInspectorPdf = function () {
-    if (!selectedApplication) return;
-    const doc = generateApplicationPDF(selectedApplication, { audience: 'inspector' });
-    doc.save('SimuPesa-Mkaguzi-' + (selectedApplication.application_id || '') + '.pdf');
-  };
-
-  window.downloadAdminPdf = function () {
-    if (!selectedApplication) return;
-    const doc = generateApplicationPDF(selectedApplication, { audience: 'admin' });
-    doc.save('SimuPesa-Admin-' + (selectedApplication.application_id || '') + '.pdf');
-  };
-
-  // ============================================================
-  // 11. UTILITY FUNCTIONS (kept as in original)
-  // ============================================================
-
-  function normalizePhone(p) { return (p || '').replace(/[^0-9]/g, ''); }
-  function escapeHtml(str) {
-    const div = document.createElement('div');
-    div.textContent = str || '';
-    return div.innerHTML;
-  }
-
-  function getSortedRows(which, rows) {
-    const state = adminTableSort[which];
+  function getSortedRows(which, rows){
+    var state = adminTableSort[which];
     if (!state.key) return rows;
-    return rows.slice().sort((a, b) => {
-      let left = String(a[state.key] || '').toLocaleLowerCase();
-      let right = String(b[state.key] || '').toLocaleLowerCase();
+    var dbKey = ADMIN_SORT_KEY_MAP[state.key] || state.key;
+    return rows.slice().sort(function(a, b){
+      var left = String(a[dbKey] || '').toLocaleLowerCase();
+      var right = String(b[dbKey] || '').toLocaleLowerCase();
       return (left < right ? -1 : left > right ? 1 : 0) * (state.direction === 'asc' ? 1 : -1);
     });
   }
 
-  function updateSortCarets(which) {
-    const state = adminTableSort[which];
-    document.querySelectorAll('#' + which + 'Table .sort-caret').forEach(c => { c.className = 'sort-caret'; });
+  function updateSortCarets(which){
+    var state = adminTableSort[which];
+    document.querySelectorAll('#' + which + 'Table .sort-caret').forEach(function(caret){ caret.className = 'sort-caret'; });
     if (!state.key) return;
-    document.querySelectorAll('#' + which + 'Table th').forEach(header => {
-      if (header.getAttribute('onclick') && header.getAttribute('onclick').indexOf("'" + state.key + "'") !== -1) {
+    var headers = document.querySelectorAll('#' + which + 'Table th');
+    headers.forEach(function(header){
+      var onclick = header.getAttribute('onclick');
+      if (onclick && onclick.indexOf("'" + state.key + "'") !== -1) {
         header.querySelector('.sort-caret').classList.add(state.direction);
       }
     });
   }
 
-  function detailRow(container, label, value) {
-    const row = document.createElement('div');
+  async function renderAdminTables(){
+    var tbody = document.getElementById('applicantsTbody');
+    var emptyNote = document.getElementById('applicantsEmpty');
+    var ptbody = document.getElementById('printedTbody');
+    var pEmpty = document.getElementById('printedEmpty');
+
+    try {
+      adminOverviewCache = await fetchAdminOverview();
+    } catch (error) {
+      console.error('Could not load admin overview:', error);
+      emptyNote.textContent = 'Imeshindikana kupakia data. Angalia intaneti kisha jaribu tena.';
+      emptyNote.style.display = 'block';
+      tbody.innerHTML = '';
+      return;
+    }
+
+    var applicants = adminOverviewCache;
+    var completed = adminOverviewCache.filter(function(r){ return Boolean(r.submitted_at); });
+    updateAdminStats(applicants, completed);
+
+    tbody.innerHTML = '';
+    if (applicants.length === 0) {
+      emptyNote.style.display = 'block';
+    } else {
+      emptyNote.style.display = 'none';
+      getSortedRows('applicants', applicants).forEach(function (a) {
+        var tr = document.createElement('tr');
+        var statusHtml = a.login_status === 'success'
+          ? '<span class="status-cell"><span class="status-icon ok" title="Ameingia">&#10003;</span><span class="status-text">Ameingia</span></span>'
+          : (a.login_status === 'failed'
+            ? '<span class="status-cell"><span class="status-icon no" title="Jaribio limekataa">&#10007;</span><span class="status-text">Haikufaulu</span></span>'
+            : '<span class="status-cell"><span class="status-icon no" style="background:rgba(98,106,124,0.12);color:var(--muted);" title="Bado hajaingia">&#8212;</span><span class="status-text">Anasubiri</span></span>');
+        var applicationId = a.application_id || '—';
+        var responseHtml = !a.response_status
+          ? '<button class="response-button" type="button" onclick="openAdminResponse(\'' + escapeHtml(applicationId) + '\')">Hajajibiwa</button>'
+          : (a.response_status === 'approved'
+            ? '<button class="response-button response-approved" type="button" onclick="openAdminResponse(\'' + escapeHtml(applicationId) + '\')">Imekubaliwa</button>'
+            : '<button class="response-button response-rejected" type="button" onclick="openAdminResponse(\'' + escapeHtml(applicationId) + '\')">Imekataliwa</button>');
+        tr.innerHTML = '<td><span class="application-id">' + escapeHtml(applicationId) + '</span></td><td><button class="table-link" type="button" onclick="showApplicationDetails(\'' + escapeHtml(applicationId) + '\')">' + escapeHtml(a.full_name) + '</button></td><td>' + escapeHtml(a.phone) +
+          '</td><td>&bull;&bull;&bull;&bull;&bull;&bull;</td><td>' + statusHtml + '</td><td>' + responseHtml + '</td><td><button class="delete-application" type="button" onclick="deleteSellerApplication(\'' + escapeHtml(applicationId) + '\')">Futa</button></td>';
+        tbody.appendChild(tr);
+      });
+    }
+
+    ptbody.innerHTML = '';
+    if (completed.length === 0) {
+      pEmpty.style.display = 'block';
+    } else {
+      pEmpty.style.display = 'none';
+      getSortedRows('printed', completed).forEach(function (c) {
+        var tr = document.createElement('tr');
+        var completedAt = c.submitted_at ? new Date(c.submitted_at).toLocaleString('sw-TZ') : '—';
+        tr.innerHTML = '<td><span class="application-id">' + escapeHtml(c.application_id || '—') + '</span></td><td><button class="table-link" type="button" onclick="showApplicationDetails(\'' + escapeHtml(c.application_id || '') + '\')">' + escapeHtml(c.full_name) + '</button></td><td>' + escapeHtml(c.phone) + '</td><td>' + escapeHtml(completedAt) + '</td>';
+        ptbody.appendChild(tr);
+      });
+    }
+    updateSortCarets('applicants');
+    updateSortCarets('printed');
+    filterAdminTable('applicants');
+    filterAdminTable('printed');
+  }
+
+  function detailRow(container, label, value){
+    var row = document.createElement('div');
     row.className = 'detail-row';
-    const labelEl = document.createElement('strong');
+    var labelEl = document.createElement('strong');
     labelEl.textContent = label;
-    const valueEl = document.createElement('span');
+    var valueEl = document.createElement('span');
     valueEl.textContent = value || '—';
     row.appendChild(labelEl);
     row.appendChild(valueEl);
     container.appendChild(row);
   }
 
-  function detailSection(container, title, rows) {
-    const heading = document.createElement('h4');
+  function detailSection(container, title, rows){
+    var heading = document.createElement('h4');
     heading.className = 'detail-section-title';
     heading.textContent = title;
     container.appendChild(heading);
-    rows.forEach(r => detailRow(container, r[0], r[1]));
+    rows.forEach(function(row){ detailRow(container, row[0], row[1]); });
   }
 
-  // ============================================================
-  // 12. VIEW ROUTING & INIT
-  // ============================================================
+  var selectedApplication = null; // { applicationId, applicationData (nested a/b/c/.. shape), photos: {front,back,supporting URLs}, response }
 
-  // Override the existing showView to refresh data when dashboard is shown
-  const originalShowView = window.showView;
-  window.showView = async function (id) {
-    originalShowView(id);
-    if (id === 'adminDashboardView') {
-      await refreshApplicantsCache();
-      renderAdminTables();
+  /* generatePDF()/collectFormData() both speak the nested a/b/c/d/f/g/h/i/k/conf
+     shape used on the intake form. Map the flat DB row (applications.*) back
+     into that shape so the same PDF builder works for admin-side downloads
+     of already-submitted applications. NOTE: this whole PDF layer is the
+     target of Workstream B — kept functional-but-plain here on purpose. */
+  function dbRowToFormShape(applicationId, app){
+    return {
+      applicationId: applicationId,
+      a: { fullname: app.a_full_name, phone: app.a_phone, nida: app.a_nida, location: app.a_location, saledate: app.a_sale_date, reason: app.a_reason },
+      b: { brand: app.b_brand, model: app.b_model, modelnum: app.b_model_number, imei1: app.b_imei1, imei2: app.b_imei2, serial: app.b_serial, storage: app.b_storage, network: app.b_network, dualsim: app.b_dual_sim },
+      c: { screen: app.c_screen, touch: app.c_touch, frame: app.c_frame, backcover: app.c_backcover, camglass: app.c_camera_glass, camlens: app.c_camera_lens, buttons: app.c_buttons, chargeport: app.c_charging_port, simtray: app.c_sim_tray, speaker: app.c_speaker, mic: app.c_microphone },
+      d: { health: app.d_battery_health, replaced: app.d_replaced, chargesok: app.d_charges_ok, overheats: app.d_overheats, drainsfast: app.d_drains_fast },
+      f: { front: app.f_front, main: app.f_main, ultrawide: app.f_ultrawide, telephoto: app.f_telephoto, flash: app.f_flash, video: app.f_video, focus: app.f_focus },
+      g: { powers: app.g_powers_on, fingerprint: app.g_fingerprint, faceid: app.g_face_id, wifi: app.g_wifi, bt: app.g_bluetooth, gps: app.g_gps, network: app.g_mobile_network, calls: app.g_calls, sms: app.g_sms, internet: app.g_internet },
+      h: { opened: app.h_opened, repaired: app.h_repaired, screenchanged: app.h_screen_changed, batterychanged: app.h_battery_changed, dropped: app.h_dropped_hard, water: app.h_water_damage, spareparts: app.h_spare_parts },
+      i: { receipt: app.i_has_receipt, warranty: app.i_has_warranty, invoice: app.i_has_invoice, other: app.i_other },
+      k: { asking: app.k_asking_price },
+      conf: { signature: app.conf_signature, date: app.conf_date }
+    };
+  }
+
+  /* jsPDF's addImage() needs actual image bytes, not a remote URL, and
+     Cloudinary photos live off-origin — so pull each one down and convert
+     to a data URL before handing it to jsPDF. One broken/expired link
+     never aborts the whole export. */
+  function urlToDataUrl(url){
+    return fetch(url)
+      .then(function(res){ if (!res.ok) throw new Error('HTTP_' + res.status); return res.blob(); })
+      .then(function(blob){
+        return new Promise(function(resolve, reject){
+          var reader = new FileReader();
+          reader.onload = function(){ resolve(reader.result); };
+          reader.onerror = reject;
+          reader.readAsDataURL(blob);
+        });
+      });
+  }
+
+  async function showApplicationDetails(applicationId){
+    var modal = document.getElementById('applicationDetailsModal');
+    var body = document.getElementById('applicationDetailsBody');
+    var subtitle = document.getElementById('applicationDetailsSubtitle');
+    body.innerHTML = '';
+    document.getElementById('applicationDetailsTitle').textContent = 'Inapakia...';
+    document.getElementById('inspectorPdfBtn').disabled = true;
+    document.getElementById('adminPdfBtn').disabled = true;
+    modal.classList.add('is-active');
+
+    var record;
+    try {
+      record = await fetchFullApplication(applicationId);
+    } catch (error) {
+      console.error('Could not load application details:', error);
+      selectedApplication = null;
+      document.getElementById('applicationDetailsTitle').textContent = 'Hitilafu';
+      subtitle.textContent = 'ID: ' + (applicationId || 'Haijapatikana');
+      detailRow(body, 'Hali', 'Imeshindikana kupakia taarifa. Jaribu tena.');
+      return;
     }
-  };
 
-  // Route on hash change
-  window.addEventListener('hashchange', function () {
-    if (window.location.hash === '#admin') {
-      showView('adminDashboardView');
+    if (!record || !record.application) {
+      selectedApplication = null;
+      document.getElementById('applicationDetailsTitle').textContent = record ? record.seller.full_name : 'Maombi hayajakamilika';
+      subtitle.textContent = 'ID: ' + (applicationId || 'Haijapatikana');
+      detailRow(body, 'Hali', 'Muuzaji bado hajakamilisha na kutuma fomu hii.');
+      return;
     }
-  });
 
-  // Initial route
-  (async function () {
-    if (window.location.hash === '#admin') {
-      await refreshApplicantsCache();
-      showView('adminDashboardView');
+    var app = record.application;
+    var photos = record.photos || {};
+    var d = dbRowToFormShape(applicationId, app);
+    selectedApplication = {
+      applicationId: applicationId,
+      applicationData: d,
+      photos: { front: photos.front_path, back: photos.back_path, supporting: photos.supporting_path },
+      response: record.response
+    };
+    document.getElementById('inspectorPdfBtn').disabled = false;
+    document.getElementById('adminPdfBtn').disabled = false;
+
+    document.getElementById('applicationDetailsTitle').textContent = d.a.fullname;
+    subtitle.textContent = 'ID ya Maombi: ' + applicationId + ' · Imetumwa: ' + (app.submitted_at ? new Date(app.submitted_at).toLocaleString('sw-TZ') : '—');
+    if (record.response) {
+      detailSection(body, 'Majibu ya Admin', [
+        ['Hali', record.response.status === 'approved' ? 'Imekubaliwa' : 'Imekataliwa'],
+        ['Sababu', record.response.reason],
+        ['Bei iliyokubaliwa', record.response.agreed_price ? 'TZS ' + Number(record.response.agreed_price).toLocaleString('en-US') : '']
+      ]);
+    }
+    detailSection(body, 'A. Taarifa za Muuzaji', [['Namba ya simu', d.a.phone], ['NIDA', d.a.nida], ['Eneo anapoishi', d.a.location], ['Tarehe ya kuuza', d.a.saledate], ['Sababu ya kuuza', d.a.reason]]);
+    detailSection(body, 'B. Utambulisho wa Simu', [['Brand', d.b.brand], ['Model', d.b.model], ['Model Number', d.b.modelnum], ['IMEI 1', d.b.imei1], ['IMEI 2', d.b.imei2], ['Serial Number', d.b.serial], ['Storage', d.b.storage], ['Network', d.b.network], ['Dual SIM', d.b.dualsim]]);
+    detailSection(body, 'C. Hali ya Nje', [['Screen', d.c.screen], ['Touch', d.c.touch], ['Frame/Body', d.c.frame], ['Back Cover', d.c.backcover], ['Camera Glass', d.c.camglass], ['Camera Lens', d.c.camlens], ['Buttons', d.c.buttons], ['Charging Port', d.c.chargeport], ['SIM Tray', d.c.simtray], ['Speaker', d.c.speaker], ['Microphone', d.c.mic]]);
+    detailSection(body, 'D. Battery', [['Battery Health', d.d.health ? d.d.health + '%' : ''], ['Imebadilishwa', d.d.replaced], ['Inachaji vizuri', d.d.chargesok], ['Inapata joto', d.d.overheats], ['Inashuka haraka', d.d.drainsfast]]);
+    detailSection(body, 'F. Camera', [['Front Camera', d.f.front], ['Main Camera', d.f.main], ['Ultrawide', d.f.ultrawide], ['Telephoto', d.f.telephoto], ['Flash', d.f.flash], ['Video Recording', d.f.video], ['Camera Focus', d.f.focus]]);
+    detailSection(body, 'G. Mfumo & Security', [['Inawaka vizuri', d.g.powers], ['Fingerprint', d.g.fingerprint], ['Face ID/Face Unlock', d.g.faceid], ['Wi-Fi', d.g.wifi], ['Bluetooth', d.g.bt], ['GPS', d.g.gps], ['Mobile Network', d.g.network], ['Calls', d.g.calls], ['SMS', d.g.sms], ['Internet/Data', d.g.internet]]);
+    detailSection(body, 'H. Historia ya Simu', [['Imefunguliwa', d.h.opened], ['Imetengenezwa', d.h.repaired], ['Screen ilibadilishwa', d.h.screenchanged], ['Battery ilibadilishwa', d.h.batterychanged], ['Imeanguka sana', d.h.dropped], ['Imeingia maji', d.h.water], ['Spare parts', d.h.spareparts]]);
+    detailSection(body, 'I–K. Vifaa, Bei & Uthibitisho', [['Receipt', d.i.receipt ? 'Ndiyo' : 'Hapana'], ['Warranty Card', d.i.warranty ? 'Ndiyo' : 'Hapana'], ['Purchase Invoice', d.i.invoice ? 'Ndiyo' : 'Hapana'], ['Other', d.i.other], ['Picha ya warranty/receipt', photos.supporting_path ? 'Imeambatanishwa' : 'Haijaambatanishwa'], ['Bei anayotaka', d.k.asking ? 'TZS ' + d.k.asking : ''], ['Sahihi ya muuzaji', d.conf.signature], ['Tarehe ya uthibitisho', d.conf.date]]);
+  }
+
+  function closeApplicationDetails(){ document.getElementById('applicationDetailsModal').classList.remove('is-active'); }
+
+  async function loadSelectedApplicationPhotos(){
+    var photos = (selectedApplication && selectedApplication.photos) || {};
+    var out = {};
+    var keys = ['front', 'back', 'supporting'];
+    for (var i = 0; i < keys.length; i++) {
+      var key = keys[i];
+      if (!photos[key]) { out[key] = null; continue; }
+      try { out[key] = await urlToDataUrl(photos[key]); }
+      catch (e) { console.error('Could not load photo "' + key + '":', e); out[key] = null; }
+    }
+    return out;
+  }
+
+  async function downloadInspectorPdf(){
+    if (!selectedApplication) return;
+    var btn = document.getElementById('inspectorPdfBtn');
+    var originalLabel = btn.textContent;
+    btn.disabled = true; btn.textContent = 'Inapakia picha...';
+
+    var data = selectedApplication.applicationData;
+    var photos = await loadSelectedApplicationPhotos();
+    btn.disabled = false; btn.textContent = originalLabel;
+
+    var doc = new jspdf.jsPDF();
+    doc.setFontSize(16);
+    doc.setFont(undefined, 'bold');
+    doc.text('PDF YA MKAGUZI — SimuPesa', 14, 18);
+    doc.setFontSize(10);
+    doc.setFont(undefined, 'normal');
+    doc.text('ID ya Maombi: ' + selectedApplication.applicationId, 14, 26);
+    doc.text('Brand: ' + (data.b.brand || '—') + '    Model: ' + (data.b.model || '—'), 14, 33);
+
+    function addPhoto(title, image, x, y, width, height){
+      doc.setFont(undefined, 'bold');
+      doc.text(title, x, y);
+      doc.setFont(undefined, 'normal');
+      if (!image) { doc.text('Haikuwekwa kwenye rekodi.', x, y + 8); return; }
+      try { doc.addImage(image, imgFormatFromDataUrl(image), x, y + 5, width, height); }
+      catch (e) { doc.text('Picha haikuweza kufunguliwa.', x, y + 8); }
+    }
+
+    addPhoto('Mbele ya simu', photos.front, 14, 44, 85, 110);
+    addPhoto('Nyuma ya simu', photos.back, 108, 44, 85, 110);
+    doc.addPage();
+    doc.setFontSize(14);
+    doc.setFont(undefined, 'bold');
+    doc.text('Warranty / Receipt / Invoice', 14, 18);
+    addPhoto('Picha ya nyaraka (hiari)', photos.supporting, 14, 28, 180, 145);
+    doc.save('SimuPesa-Mkaguzi-' + selectedApplication.applicationId + '.pdf');
+  }
+
+  async function downloadAdminPdf(){
+    if (!selectedApplication) return;
+    var btn = document.getElementById('adminPdfBtn');
+    var originalLabel = btn.textContent;
+    btn.disabled = true; btn.textContent = 'Inapakia picha...';
+
+    var photos = await loadSelectedApplicationPhotos();
+    btn.disabled = false; btn.textContent = originalLabel;
+
+    var doc = generatePDF(selectedApplication.applicationData, photos);
+    doc.save('SimuPesa-Admin-' + selectedApplication.applicationId + '.pdf');
+  }
+
+  function filterAdminTable(which){
+    var input = document.getElementById(which + 'Search');
+    var query = input ? input.value.trim().toLocaleLowerCase() : '';
+    var rows = document.querySelectorAll('#' + which + 'Tbody tr');
+    var visible = 0;
+    rows.forEach(function(row){
+      var match = !query || row.textContent.toLocaleLowerCase().indexOf(query) !== -1;
+      row.style.display = match ? '' : 'none';
+      if (match) visible++;
+    });
+    var empty = document.getElementById(which + 'Empty');
+    if (!rows.length) {
+      empty.textContent = empty.dataset.defaultMessage;
+    } else if (!visible) {
+      empty.textContent = 'Hakuna rekodi inayolingana na utafutaji wako.';
+      empty.style.display = 'block';
     } else {
-      await refreshApplicantsCache();
+      empty.style.display = 'none';
     }
-  })();
+  }
 
-  // Override the original toggleAdminSection to keep compatibility
-  window.toggleAdminSection = function (which) {
-    const appSec = document.getElementById('applicantsSection');
-    const prnSec = document.getElementById('printedSection');
-    const appBtn = document.getElementById('toggleApplicants');
-    const prnBtn = document.getElementById('togglePrinted');
+  function sortAdminTable(which, key){
+    var state = adminTableSort[which];
+    state.direction = state.key === key && state.direction === 'asc' ? 'desc' : 'asc';
+    state.key = key;
+    renderAdminTables();
+  }
+
+  function exportAdminTable(which){
+    var rows = which === 'applicants' ? adminOverviewCache : adminOverviewCache.filter(function(r){ return Boolean(r.submitted_at); });
+    var headers = which === 'applicants' ? ['ID ya Maombi', 'Jina Kamili', 'Namba ya Simu', 'Status', 'Majibu'] : ['ID ya Maombi', 'Jina Kamili', 'Namba ya Simu', 'Tarehe ya Kukamilisha'];
+    var values = rows.map(function(row){
+      return which === 'applicants'
+        ? [row.application_id, row.full_name, row.phone, row.login_status, row.response_status === 'approved' ? 'Imekubaliwa' : (row.response_status === 'rejected' ? 'Imekataliwa' : 'Hajajibiwa')]
+        : [row.application_id, row.full_name, row.phone, row.submitted_at ? new Date(row.submitted_at).toLocaleString('sw-TZ') : ''];
+    });
+    var csv = [headers].concat(values).map(function(row){ return row.map(function(cell){ return '"' + String(cell || '').replace(/"/g, '""') + '"'; }).join(','); }).join('\n');
+    var link = document.createElement('a');
+    link.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }));
+    link.download = 'simupesa-' + which + '.csv';
+    link.click();
+    URL.revokeObjectURL(link.href);
+  }
+
+  /* This now deletes REAL production rows (cascading to applications,
+     photos and responses via ON DELETE CASCADE) — not a browser-only
+     wipe like the old localStorage version, so it needs a much harder
+     confirmation than before (A4 in the migration plan). */
+  async function clearAdminData(){
+    var typed = window.prompt('Hii itafuta WAUZAJI WOTE na fomu zao ZOTE kutoka kwenye database — hatua hii haiwezi kurejeshwa. Andika FUTA ili kuthibitisha:');
+    if (typed !== 'FUTA') return;
+    try {
+      var result = await supabaseClient.from('sellers').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+      if (result.error) throw result.error;
+      document.getElementById('applicantsSearch').value = '';
+      document.getElementById('printedSearch').value = '';
+      await renderAdminTables();
+    } catch (error) {
+      console.error('Clearing admin data failed:', error);
+      window.alert('Imeshindikana kufuta data. Jaribu tena.');
+    }
+  }
+
+  async function deleteSellerApplication(applicationId){
+    var row = adminOverviewCache.find(function(item){ return item.application_id === applicationId; });
+    if (!row) return;
+    if (!window.confirm('Unataka kufuta maombi ya ' + row.full_name + ' (' + applicationId + ')? Hatua hii haiwezi kurejeshwa.')) return;
+    try {
+      var result = await supabaseClient.from('sellers').delete().eq('application_id', applicationId);
+      if (result.error) throw result.error;
+      await renderAdminTables();
+    } catch (error) {
+      console.error('Deleting seller failed:', error);
+      window.alert('Imeshindikana kufuta. Jaribu tena.');
+    }
+  }
+
+  function toggleAdminSection(which){
+    var appSec = document.getElementById('applicantsSection');
+    var prnSec = document.getElementById('printedSection');
+    var appBtn = document.getElementById('toggleApplicants');
+    var prnBtn = document.getElementById('togglePrinted');
     if (which === 'applicants') {
       appSec.classList.add('is-active'); prnSec.classList.remove('is-active');
       appBtn.classList.add('is-active'); prnBtn.classList.remove('is-active');
@@ -2979,9 +3107,22 @@
       prnSec.classList.add('is-active'); appSec.classList.remove('is-active');
       prnBtn.classList.add('is-active'); appBtn.classList.remove('is-active');
     }
-  };
+  }
 
-  console.log('✅ SimuPesa Supabase integration applied (script-only).');
+  /* ===================== INITIAL ROUTE ===================== */
+  (async function routeAdmin(){
+    if (window.location.hash !== '#admin') return;
+    if (!supabaseClient) { showView('adminLoginView'); return; }
+    try {
+      var sessionResult = await supabaseClient.auth.getSession();
+      var user = sessionResult.data.session && sessionResult.data.session.user;
+      if (user && await isSimuPesaAdmin(user.id)) showView('adminDashboardView');
+      else showView('adminLoginView');
+    } catch (error) {
+      console.warn('Admin session check failed:', error);
+      showView('adminLoginView');
+    }
+  })();
 </script>
 
 </body>
