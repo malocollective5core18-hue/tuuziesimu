@@ -1953,7 +1953,7 @@
 </div>
 
 <script>
-  /* Shared backend configuration. Replace with your own project's
+ /* Shared backend configuration. Replace with your own project's
      URL/anon key if these ever change. The anon key is safe to expose
      only because RLS policies + RPCs (see migration SQL) gate every
      write. */
@@ -1974,9 +1974,7 @@
   if (!supabaseClient) {
     console.warn('Supabase library did not load. SimuPesa cannot read or write data until it is available.');
   }
-</script>
 
-<script>
   /* =====================================================
      SIMUPESA APP LOGIC — Supabase-backed (multi-device)
      No record data is read from or written to localStorage.
