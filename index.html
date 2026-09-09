@@ -1954,6 +1954,1947 @@
 
 <script>
   /* =====================================================
+     DESIGN TOKENS
+     Warm-white base + gold (cash) + teal (verification),
+     with a soft indigo kept only in the background mesh for
+     depth. One glass system reused everywhere.
+     ===================================================== */
+  :root {
+    --ink:          #fbfaf7;
+    --panel:        #f2efe8;
+    --line:         #e3ddd0;
+    --text:         #1c2130;
+    --muted:        #161616;
+    --gold:         #b3822f;
+    --gold-bright:  #d9a94f;
+    --teal:         #128a72;
+    --teal-bright:  #1fb997;
+    --indigo:       #6366f1;
+    --on-accent:    #fbfaf7;
+
+    --glass:        rgba(255,255,255,0.38);
+    --glass-strong: rgba(255,255,255,0.62);
+    --glass-border: rgba(255,255,255,0.75);
+    --shadow-glass: 0 16px 44px rgba(28,33,48,0.14);
+
+    --display: 'Space Grotesk', sans-serif;
+    --body: 'Manrope', sans-serif;
+  }
+
+  * { box-sizing: border-box; }
+  html { scroll-behavior: smooth; }
+
+  body {
+    margin: 0;
+    position: relative;
+    background-color: var(--ink);
+    color: var(--text);
+    font-family: var(--body);
+    font-weight: 300;
+    line-height: 1.6;
+    font-size: 15px;
+    overflow-x: hidden;
+  }
+
+  /* Vivid colour mesh sitting behind the whole page - the
+     one bold background move that the glass panels reveal. */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: -15%;
+    background:
+      radial-gradient(circle at 10% 15%, rgba(179,130,47,0.55), transparent 55%),
+      radial-gradient(circle at 90% 8%, rgba(18,138,114,0.50), transparent 55%),
+      radial-gradient(circle at 25% 85%, rgba(99,102,241,0.35), transparent 55%),
+      radial-gradient(circle at 85% 90%, rgba(217,169,79,0.40), transparent 55%),
+      linear-gradient(135deg, rgba(179,130,47,0.10), rgba(18,138,114,0.10));
+    filter: blur(55px);
+    z-index: -2;
+    pointer-events: none;
+  }
+
+  /* Faint dot grid for a technical, precise feel */
+  body::after {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image: radial-gradient(rgba(28,33,48,0.10) 1.2px, transparent 1.2px);
+    background-size: 22px 22px;
+    z-index: -1;
+    pointer-events: none;
+  }
+
+  h1, h2, h3, .brand {
+    font-family: var(--display);
+    font-weight: 600;
+    margin: 0;
+  }
+
+  a { color: inherit; }
+
+  .rule {
+    width: 40px;
+    height: 2px;
+    background: linear-gradient(90deg, var(--gold), var(--teal));
+    border: none;
+    border-radius: 2px;
+    margin: 14px 0;
+  }
+
+  section { padding: 76px 22px; }
+
+  .section-inner { max-width: 940px; margin: 0 auto; }
+
+  /* ===================== NAV (floating glass pill) ===================== */
+  header.nav {
+    position: fixed;
+    top: 14px; left: 14px; right: 14px;
+    z-index: 100;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 18px;
+    border-radius: 16px;
+    background: rgba(255,255,255,0.82);
+    backdrop-filter: blur(26px) saturate(180%);
+    -webkit-backdrop-filter: blur(26px) saturate(180%);
+    border: 1px solid var(--glass-border);
+    box-shadow: var(--shadow-glass), inset 0 1px 0 rgba(255,255,255,0.5);
+    transition: background 0.4s ease, box-shadow 0.4s ease;
+  }
+
+  header.nav.scrolled {
+    background: rgba(255,255,255,0.92);
+    box-shadow: 0 12px 36px rgba(28,33,48,0.18), inset 0 1px 0 rgba(255,255,255,0.6);
+  }
+
+  .brand { font-size: 19px; letter-spacing: 0.2px; }
+  .brand span {
+    background: linear-gradient(135deg, var(--gold), var(--teal));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  nav.links { display: flex; gap: 24px; }
+
+  nav.links a {
+    text-decoration: none;
+    font-size: 13px;
+    color: var(--muted);
+    position: relative;
+    padding-bottom: 4px;
+    transition: color 0.3s ease;
+  }
+
+  nav.links a:hover, nav.links a:focus-visible { color: var(--text); }
+
+  nav.links a::after {
+    content: '';
+    position: absolute;
+    left: 0; bottom: 0;
+    width: 0%; height: 1px;
+    background-color: var(--gold);
+    transition: width 0.3s ease;
+  }
+
+  nav.links a:hover::after, nav.links a:focus-visible::after { width: 100%; }
+
+  .nav-call {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    text-decoration: none;
+    color: var(--text);
+    background: rgba(255,255,255,0.5);
+    border: 1px solid var(--glass-border);
+    padding: 8px 14px;
+    border-radius: 999px;
+    transition: border-color 0.3s ease, background 0.3s ease;
+  }
+  .nav-call:hover { border-color: var(--gold); background: rgba(255,255,255,0.7); }
+
+  @media (max-width: 700px) {
+    nav.links { display: none; }
+  }
+
+  /* ===================== HERO ===================== */
+  .hero {
+    position: relative;
+    min-height: 86vh;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    padding: 104px 22px 40px;
+    overflow: hidden;
+    background:
+      radial-gradient(ellipse at 15% 20%, rgba(179,130,47,0.30), transparent 55%),
+      radial-gradient(ellipse at 85% 15%, rgba(18,138,114,0.26), transparent 55%),
+      radial-gradient(ellipse at 50% 100%, rgba(99,102,241,0.16), transparent 60%);
+  }
+
+  .hero .mark {
+    position: absolute;
+    z-index: 0;
+    opacity: 0.14;
+    color: var(--teal);
+    animation: drift 20s ease-in-out infinite;
+    pointer-events: none;
+  }
+  .hero .mark.one   { top: -40px; right: 6%;  width: 190px; animation-delay: 0s; }
+  .hero .mark.two   { bottom: -60px; left: 3%; width: 230px; color: var(--gold); animation-delay: -7s; }
+
+  /* Keep marks tucked into the corners on narrow screens so they
+     never sit under the headline/buttons */
+  @media (max-width: 560px) {
+    .hero .mark.one { width: 110px; top: -20px; right: -30px; }
+    .hero .mark.two { width: 140px; bottom: -30px; left: -40px; }
+  }
+
+  @keyframes drift {
+    0%, 100% { transform: translateY(0) rotate(0deg); }
+    50%      { transform: translateY(-18px) rotate(4deg); }
+  }
+
+  .hero-tag {
+    position: relative;
+    z-index: 1;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    width: fit-content;
+    font-size: 12.5px;
+    color: var(--text);
+    background: var(--glass);
+    backdrop-filter: blur(14px) saturate(180%);
+    -webkit-backdrop-filter: blur(14px) saturate(180%);
+    border: 1px solid var(--glass-border);
+    padding: 7px 14px;
+    border-radius: 999px;
+    box-shadow: var(--shadow-glass);
+    opacity: 0;
+    animation: rise 0.8s ease forwards;
+    animation-delay: 0.1s;
+  }
+  .hero-tag .dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--teal-bright);
+    box-shadow: 0 0 8px var(--teal-bright);
+  }
+
+  .hero h1 {
+    position: relative;
+    z-index: 1;
+    font-size: clamp(32px, 6.4vw, 58px);
+    font-weight: 600;
+    line-height: 1.12;
+    max-width: 680px;
+    margin-top: 16px;
+    opacity: 0;
+    animation: rise 0.9s ease forwards;
+    animation-delay: 0.25s;
+  }
+
+  .hero p.lede {
+    position: relative;
+    z-index: 1;
+    max-width: 440px;
+    margin-top: 16px;
+    color: var(--muted);
+    font-size: 15px;
+    opacity: 0;
+    animation: rise 0.9s ease forwards;
+    animation-delay: 0.4s;
+  }
+
+  .hero .cta-row {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    margin-top: 26px;
+    opacity: 0;
+    animation: rise 0.9s ease forwards;
+    animation-delay: 0.55s;
+  }
+
+  @keyframes rise {
+    from { opacity: 0; transform: translateY(14px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 11px 22px;
+    border: none;
+    color: var(--on-accent);
+    text-decoration: none;
+    font-size: 13px;
+    letter-spacing: 0.2px;
+    border-radius: 10px;
+    background: linear-gradient(135deg, var(--gold), var(--gold-bright));
+    box-shadow: 0 8px 22px rgba(179,130,47,0.32);
+    transition: box-shadow 0.3s ease, transform 0.2s ease;
+  }
+  .btn:hover, .btn:focus-visible {
+    box-shadow: 0 10px 28px rgba(179,130,47,0.42);
+    transform: translateY(-1px);
+  }
+
+  .btn.ghost {
+    background: var(--glass);
+    backdrop-filter: blur(14px) saturate(180%);
+    -webkit-backdrop-filter: blur(14px) saturate(180%);
+    border: 1px solid var(--glass-border);
+    color: var(--text);
+    box-shadow: var(--shadow-glass);
+  }
+  .btn.ghost:hover {
+    border-color: var(--teal);
+    box-shadow: 0 10px 24px rgba(18,138,114,0.2);
+    transform: translateY(-1px);
+  }
+
+  /* Primary call-to-action: the one action we want every visitor's eye
+     drawn to in a given area, reinforced with a soft breathing glow. */
+  .btn-primary-glow {
+    padding: 14px 28px;
+    font-size: 14px;
+    font-weight: 600;
+    animation: ctaGlow 2.8s ease-in-out infinite;
+  }
+  @keyframes ctaGlow {
+    0%, 100% { box-shadow: 0 8px 22px rgba(179,130,47,0.32), 0 0 0 0 rgba(217,169,79,0.35); }
+    50%      { box-shadow: 0 10px 30px rgba(179,130,47,0.46), 0 0 0 8px rgba(217,169,79,0); }
+  }
+
+  .hero-note {
+    position: relative;
+    z-index: 1;
+    margin-top: 18px;
+    font-size: 12.5px;
+    color: var(--muted);
+    opacity: 0;
+    animation: rise 0.9s ease forwards;
+    animation-delay: 0.7s;
+  }
+
+  /* ===================== SCROLL REVEAL ===================== */
+  .reveal { opacity: 0; transform: translateY(20px); }
+  .reveal.in-view { animation: rise 0.7s ease forwards; margin-top: 32px; }
+
+  .reveal-left, .reveal-right, .reveal-up {
+    opacity: 0;
+    transition: opacity 0.7s ease, transform 0.7s ease;
+  }
+  .reveal-left  { transform: translateX(-40px); }
+  .reveal-right { transform: translateX(40px); }
+  .reveal-up    { transform: translateY(36px); }
+  .reveal-left.in-view, .reveal-right.in-view, .reveal-up.in-view {
+    opacity: 1; transform: translate(0, 0);
+  }
+
+  /* Shared glass panel used by trust / steps / contact / footer */
+  .glass-panel {
+    background: var(--glass);
+    backdrop-filter: blur(28px) saturate(180%);
+    -webkit-backdrop-filter: blur(28px) saturate(180%);
+    border: 1px solid var(--glass-border);
+    border-radius: 24px;
+    box-shadow: 0 16px 48px rgba(28,33,48,0.14), inset 0 1px 0 rgba(255,255,255,0.7);
+  }
+
+  /* ===================== TRUST QUOTE ===================== */
+  .trust .section-inner {
+    display: grid;
+    grid-template-columns: 0.9fr 1.4fr;
+    gap: 40px;
+    padding: 40px 36px;
+  }
+
+  .trust .label { font-size: 13px; color: var(--muted); }
+
+  .trust blockquote {
+    margin: 0;
+    font-family: var(--display);
+    font-weight: 500;
+    font-size: clamp(21px, 2.8vw, 30px);
+    line-height: 1.4;
+  }
+  .trust blockquote span { color: var(--teal); }
+
+  .trust p.credit { margin-top: 16px; font-size: 13px; color: var(--muted); }
+
+  @media (max-width: 760px) {
+    .trust .section-inner { grid-template-columns: 1fr; }
+  }
+
+  /* ===================== PILLARS (glass cards) ===================== */
+  .pillars h2 { font-size: clamp(24px, 3.8vw, 32px); }
+
+  .pillar-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 18px;
+    margin-top: 42px;
+  }
+
+  .pillar-card {
+    padding: 26px 22px;
+    border-radius: 20px;
+    background: var(--glass);
+    backdrop-filter: blur(22px) saturate(180%);
+    -webkit-backdrop-filter: blur(22px) saturate(180%);
+    border: 1px solid var(--glass-border);
+    box-shadow: 0 12px 36px rgba(28,33,48,0.12), inset 0 1px 0 rgba(255,255,255,0.7);
+    transition: transform 0.3s ease, box-shadow 0.3s ease, border-color 0.3s ease;
+  }
+  .pillar-card:hover {
+    transform: translateY(-5px);
+    border-color: var(--gold);
+    box-shadow: 0 20px 46px rgba(179,130,47,0.28), inset 0 1px 0 rgba(255,255,255,0.8);
+  }
+
+  /* =====================================================
+     SECTION BACKGROUND IMAGES (Trust + Pillars)
+     To drop in a real photo, paste the image URL/path inside
+     the empty url('') below for whichever section you want —
+     keep the quotes. Example:
+       background-image: linear-gradient(...), url('images/trust-bg.jpg');
+     The gradient stays layered on top as a colour tint so the
+     glass cards/text keep reading clearly with or without a photo.
+     ===================================================== */
+  .trust, .pillars {
+    position: relative;
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+  }
+  .trust {
+    background-image: url('assets/PH1.avif');
+  }
+  /* Transparent colour veil over the second-section photo. Adjust the
+     final alpha values (0.42 / 0.36) if you want it lighter or darker. */
+  .trust::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(160deg, rgba(179,130,47,0.42), rgba(18,138,114,0.36));
+    pointer-events: none;
+  }
+  .trust .section-inner {
+    position: relative;
+    z-index: 1;
+  }
+  .pillars {
+    background-image:
+      linear-gradient(160deg, rgba(18,138,114,0.20), rgba(99,102,241,0.16)),
+      url('assets/PH2.avif');
+  }
+
+  /* Small glass chip for headings that sit directly on a section
+     background (not already inside a glass-panel), so they stay
+     legible once a photo is dropped in behind them. */
+  .section-header-chip {
+    display: inline-block;
+    padding: 16px 22px;
+    border-radius: 18px;
+    background: var(--glass-strong);
+    backdrop-filter: blur(20px) saturate(180%);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    border: 1px solid var(--glass-border);
+    box-shadow: var(--shadow-glass);
+  }
+
+  .pillar-card .num {
+    font-family: var(--display);
+    font-size: 13px;
+    color: var(--gold);
+    margin-bottom: 16px;
+  }
+
+  .pillar-card h3 {
+    font-size: 18px;
+    font-weight: 600;
+    margin-bottom: 8px;
+  }
+
+  .pillar-card p { font-size: 13.5px; color: var(--muted); margin: 0; }
+
+  .pillar-grid > *:nth-child(2) { transition-delay: 0.12s;}
+  .pillar-grid > *:nth-child(3) { transition-delay: 0.24s; }
+
+  @media (max-width: 760px) {
+    .pillar-grid { grid-template-columns: 1fr; }
+    .pillar-grid .reveal-left, .pillar-grid .reveal-right { transform: translateY(36px); margin-bottom: 90px;}
+  }
+
+  /* ===================== BRAND MARQUEE ===================== */
+  .marquee-wrap { max-width: 940px; margin: 0 auto; padding: 0 9px; }
+  .marquee {
+    overflow: hidden;
+    padding: 16px 0;
+    border-radius: 14px;
+  }
+  .marquee-track { display: flex; width: max-content; animation: scroll-left 30s linear infinite; }
+  .marquee-track span {
+    font-family: var(--display);
+    font-weight: 500;
+    font-size: 17px;
+    color: var(--muted);
+    padding: 0 22px;
+    white-space: nowrap;
+  }
+  .marquee-track span::after { content: '·'; margin-left: 22px; color: var(--gold); }
+
+  @keyframes scroll-left {
+    from { transform: translateX(0); }
+    to   { transform: translateX(-50%); }
+  }
+
+  /* ===================== STEPS (glass timeline) ===================== */
+  .steps h2 { text-align: center; font-size: clamp(26px, 4vw, 36px); }
+  .steps .section-inner > .rule { margin: 12px auto 0; }
+  .steps-intro { text-align: center; color: var(--muted); max-width: 460px; margin: 12px auto 44px; font-size: 14px; }
+
+  .step-list {
+    display: flex;
+    flex-direction: column;
+    padding: 6px 28px;
+  }
+
+  .step-row {
+    display: grid;
+    grid-template-columns: 40px 1fr;
+    gap: 18px;
+    padding: 20px 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .step-row:last-child { border-bottom: none; }
+
+  .step-row .step-num {
+    width: 32px; height: 32px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--gold), var(--gold-bright));
+    color: var(--on-accent);
+    box-shadow: 0 4px 14px rgba(179,130,47,0.35);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--display);
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  .step-row h3 {
+    font-size: 16px;
+    font-weight: 600;
+    margin-bottom: 5px;
+  }
+  .step-row p { font-size: 13.5px; color: var(--muted); margin: 0; max-width: 520px; }
+
+  /* ===================== CONTACT ===================== */
+  .contact .section-inner {
+    display: block;
+    max-width: 560px;
+    text-align: center;
+    padding: 48px 36px;
+  }
+
+  .contact h2 { font-size: clamp(24px, 3.8vw, 32px); margin: 0 auto; }
+  .contact > .section-inner > div:first-child > p { color: var(--muted); font-size: 14px; margin: 10px auto 0; max-width: 400px; }
+
+  .direct-contact {
+    margin-top: 26px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .direct-contact .cta-row { margin-top: 0; opacity: 1; animation: none; justify-content: center; }
+
+  .requirements {
+    margin-top: 26px;
+    padding-top: 18px;
+    border-top: 1px solid var(--line);
+    font-size: 13px;
+    color: var(--muted);
+    text-align: left;
+    max-width: 380px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+  .requirements li { margin-bottom: 6px; }
+
+  @media (max-width: 760px) {
+    .contact .section-inner { padding: 30px 22px; }
+  }
+
+  /* ===================== FOOTER ===================== */
+  .footer-wrap { max-width: 940px; margin: 20px auto 30px; padding: 0 22px; }
+  footer.glass-panel { padding: 40px 32px 73px; }
+  footer .section-inner { display: grid; grid-template-columns: 1.3fr 1fr 1fr; gap: 32px; max-width: none; }
+  footer h3 { font-size: 12px; letter-spacing: 0.5px; color: var(--muted); margin-bottom: 12px; }
+  footer p, footer a { font-size: 13.5px; color: var(--muted); text-decoration: none; line-height: 1.8; }
+  footer a:hover { color: var(--teal); }
+
+  .footer-bottom {
+    margin: 34px 0 0;
+    padding-top: 16px;
+    border-top: 1px solid var(--line);
+    font-size: 11.5px;
+    color: var(--muted);
+    display: flex;
+    justify-content: space-between;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  @media (max-width: 760px) {
+    footer .section-inner { grid-template-columns: 1fr; }
+  }
+
+  /* ===================== FLOATING QUICK-ACTIONS (WhatsApp + Call) ===================== */
+  .float-actions {
+    position: fixed;
+    bottom: 18px;
+    right: 18px;
+    z-index: 90;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .float-wa,
+  .float-call {
+    width: 46px;
+    height: 46px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-decoration: none;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+  }
+
+  .float-wa {
+    background: linear-gradient(135deg, var(--teal), var(--teal-bright));
+    box-shadow: 0 8px 26px rgba(18,138,114,0.40), inset 0 1px 0 rgba(255,255,255,0.4);
+  }
+  .float-wa:hover { transform: scale(1.08); }
+  .float-wa svg { width: 22px; height: 22px; }
+
+  .float-call {
+    background: linear-gradient(135deg, var(--gold), var(--gold-bright));
+    box-shadow: 0 8px 26px rgba(179,130,47,0.40), inset 0 1px 0 rgba(255,255,255,0.4);
+  }
+  .float-call:hover { transform: scale(1.08); }
+  .float-call svg { width: 20px; height: 20px; }
+
+  /* Gentle attention pulse so first-time visitors notice the quick-contact
+     buttons without it feeling like a constant distraction. */
+  @keyframes floatPulse {
+    0%, 100% { box-shadow: 0 8px 26px rgba(18,138,114,0.40), 0 0 0 0 rgba(31,185,151,0.45); }
+    50%      { box-shadow: 0 8px 26px rgba(18,138,114,0.40), 0 0 0 9px rgba(31,185,151,0); }
+  }
+  .float-wa { animation: floatPulse 2.6s ease-out infinite; }
+
+  @media (max-width: 420px) {
+    .float-actions { bottom: 14px; right: 14px; gap: 10px; }
+    .float-wa, .float-call { width: 44px; height: 44px; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; transition: none !important; }
+  }
+
+  /* ===================== APP VIEWS (gate / form / admin) ===================== */
+  .view { display: none; }
+  .view.is-active { display: block; }
+
+  .app-view {
+    min-height: 100vh;
+    padding: 100px 18px 60px;
+    position: relative;
+  }
+
+  .app-topbar {
+    position: fixed;
+    top: 14px; left: 14px; right: 14px;
+    z-index: 100;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 12px 18px;
+    border-radius: 16px;
+    background: rgba(255,255,255,0.82);
+    backdrop-filter: blur(26px) saturate(180%);
+    -webkit-backdrop-filter: blur(26px) saturate(180%);
+    border: 1px solid var(--glass-border);
+    box-shadow: var(--shadow-glass);
+  }
+
+  .app-topbar .back-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: var(--muted);
+    text-decoration: none;
+    cursor: pointer;
+    background: none;
+    border: none;
+    font-family: var(--body);
+  }
+  .app-topbar .back-link:hover { color: var(--text); }
+  .app-topbar .app-title { font-family: var(--display); font-size: 14px; color: var(--muted); }
+
+  .app-card {
+    max-width: 480px;
+    margin: 0 auto;
+    padding: 32px 26px;
+  }
+  .app-card h1, .app-card h2 { font-size: clamp(22px, 4vw, 28px); }
+  .app-card .sub { color: var(--muted); font-size: 13.5px; margin-top: 8px; }
+
+  .field {
+    margin-top: 18px;
+    text-align: left;
+  }
+  .field label {
+    display: block;
+    font-size: 12px;
+    color: var(--muted);
+    margin-bottom: 6px;
+  }
+  .field input,
+  .field select,
+  .field textarea {
+    width: 100%;
+    padding: 11px 13px;
+    background: rgba(255,255,255,0.55);
+    border: 1px solid var(--line);
+    border-radius: 9px;
+    color: var(--text);
+    font-family: var(--body);
+    font-size: 14px;
+    resize: none;
+    transition: border-color 0.3s ease, box-shadow 0.3s ease;
+  }
+  .field input:focus, .field select:focus, .field textarea:focus {
+    outline: none;
+    border-color: var(--teal);
+    box-shadow: 0 0 0 3px rgba(18,138,114,0.14);
+  }
+
+  .radio-group { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+  .radio-group label {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size:0.59rem;
+    color: var(--text);
+    background: rgba(255,255,255,0.5);
+    border: 1px solid var(--line);
+    padding: 7px 12px;
+    border-radius: 999px;
+    cursor: pointer;
+    transition: border-color 0.2s ease, background 0.2s ease;
+  }
+  .radio-group input { width: auto; margin: 0; }
+  .radio-group label:has(input:checked) {
+    border-color: var(--teal);
+    background: rgba(18,138,114,0.12);
+  }
+
+  .app-error {
+    margin-top: 14px;
+    font-size: 12.5px;
+    color: #b3312f;
+    min-height: 16px;
+  }
+  .app-success { color: var(--teal); }
+
+  .app-btn-row { margin-top: 24px; display: flex; gap: 10px; flex-wrap: wrap; }
+
+  /* ===================== FORM VIEW ===================== */
+  .form-shell { max-width: 720px; margin: 0 auto; }
+  .form-progress {
+    font-size: 12.5px;
+    color: var(--muted);
+    text-align: center;
+    margin-bottom: 18px;
+  }
+
+  .form-section {
+    padding: 26px 24px;
+    margin-bottom: 18px;
+  }
+  .form-section h2 {
+    font-size: 16px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .form-section h2 .letter {
+    width: 26px; height: 26px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--gold), var(--gold-bright));
+    color: var(--on-accent);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px;
+    flex-shrink: 0;
+  }
+  .form-section .rule { margin: 10px 0 18px; }
+
+  .field-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0 16px;
+  }
+  @media (max-width: 600px) {
+    .field-grid { grid-template-columns: 1fr; }
+  }
+
+  .check-row {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 10px;
+    align-items: center;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .check-row:last-child { border-bottom: none; }
+  .check-row .row-label { font-size: 13.5px; }
+
+  .star-row { display: flex; gap: 8px; margin-top: 6px; }
+  .star-row label {
+    flex: 1;
+    text-align: center;
+    padding: 10px 0;
+    border-radius: 9px;
+    border: 1px solid var(--line);
+    background: rgba(255,255,255,0.5);
+    font-family: var(--display);
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .star-row label:has(input:checked) {
+    border-color: var(--gold);
+    background: rgba(179,130,47,0.14);
+    color: var(--gold);
+  }
+  .star-row input { display: none; }
+
+  .photo-upload {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+    margin-top: 8px;
+  }
+  @media (max-width: 560px) {
+    .photo-upload { grid-template-columns: 1fr; }
+  }
+  .photo-slot {
+    border: 1.5px dashed var(--line);
+    border-radius: 14px;
+    padding: 16px;
+    text-align: center;
+    cursor: pointer;
+    background: rgba(255,255,255,0.4);
+    transition: border-color 0.2s ease;
+    position: relative;
+    overflow: hidden;
+    color: var(--text);
+    font: inherit;
+  }
+  .photo-slot:hover { border-color: var(--teal); }
+  .photo-slot.has-photo { border-style: solid; border-color: var(--teal); }
+  .photo-slot input { display: none; }
+  .photo-slot .ph-label { font-size: 12.5px; color: var(--muted); margin-top: 8px; }
+  .photo-slot img {
+    max-width: 100%;
+    max-height: 140px;
+    border-radius: 8px;
+    display: none;
+  }
+  .photo-slot.has-photo img { display: inline-block; }
+  .photo-slot.has-photo .ph-icon { display: none; }
+  .photo-file-input { display: none; }
+  .photo-source-card { max-width: 360px; text-align: center; }
+  .photo-source-card .app-btn-row { flex-direction: column; align-items: stretch; margin-top: 20px; }
+  .photo-source-card .btn { width: 100%; }
+  button:disabled { opacity: 0.45; cursor: not-allowed; }
+
+  .form-submit-bar {
+    position: sticky;
+    bottom: 12px;
+    margin-top: 24px;
+    padding: 16px;
+    display: flex;
+    justify-content: center;
+  }
+
+  /* ===================== MODAL ===================== */
+  .modal-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 200;
+    background: rgba(28,33,48,0.45);
+    backdrop-filter: blur(4px);
+    align-items: center;
+    justify-content: center;
+    padding: 20px;
+  }
+  .modal-overlay.is-active { display: flex; }
+  .modal-card {
+    max-width: 380px;
+    width: 100%;
+    padding: 30px 26px;
+    text-align: center;
+    background: rgba(255,255,255,0.94);
+  }
+  .modal-card h3 { font-size: 19px; }
+  .modal-card p { font-size: 13.5px; color: var(--muted); margin-top: 10px; }
+  .modal-card .app-btn-row { justify-content: center; }
+  .pdf-viewer-card { max-width: 900px; height: min(88vh, 760px); padding: 16px; display: flex; flex-direction: column; text-align: left; }
+  .pdf-viewer-frame { width: 100%; flex: 1; min-height: 420px; border: 1px solid var(--line); border-radius: 12px; background: #fff; }
+  .submission-success-card { text-align: center; border-color: rgba(18,138,114,0.45); background: rgba(234,250,245,0.92); }
+  .success-spinner {
+    width: 42px; height: 42px; margin: 0 auto 14px;
+    border: 4px solid rgba(18,138,114,0.20); border-top-color: var(--teal);
+    border-radius: 50%; animation: success-spin 0.85s linear infinite;
+  }
+  .submission-success-card h3 { color: var(--teal); font-size: 22px; }
+  .success-contact { margin: 18px 0 4px; padding-top: 15px; border-top: 1px solid rgba(18,138,114,0.20); }
+  .success-contact strong { display: block; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.4px; }
+  .success-contact a { display: inline-block; margin: 6px 5px 0; color: var(--teal); font-family: var(--display); font-weight: 600; text-decoration: none; }
+  @keyframes success-spin { to { transform: rotate(360deg); } }
+
+  /* ===================== ADMIN ===================== */
+  .admin-shell { max-width: 900px; margin: 0 auto; }
+  .admin-shell-wide { max-width: 1100px; }
+  .admin-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 18px;
+  }
+  @media (max-width: 720px) {
+    .admin-grid { grid-template-columns: 1fr; }
+  }
+
+  /* ---- Overview stat cards ---- */
+  .admin-stats-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 14px;
+    margin-bottom: 22px;
+  }
+  @media (max-width: 860px) { .admin-stats-grid { grid-template-columns: 1fr 1fr; } }
+  @media (max-width: 460px) { .admin-stats-grid { grid-template-columns: 1fr; } }
+
+  .stat-card {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 2px;
+    transition: transform 0.25s ease, box-shadow 0.25s ease;
+  }
+  .stat-card:hover { transform: translateY(-3px); }
+
+  .stat-icon {
+    flex-shrink: 0;
+    width: 42px; height: 42px;
+    border-radius: 12px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .stat-icon svg { width: 20px; height: 20px; }
+  .stat-icon-gold   { background: rgba(179,130,47,0.14); color: var(--gold); }
+  .stat-icon-teal   { background: rgba(18,138,114,0.14); color: var(--teal); }
+  .stat-icon-indigo { background: rgba(99,102,241,0.14); color: var(--indigo); }
+  .stat-icon-muted  { background: rgba(98,106,124,0.12); color: var(--muted); }
+
+  .stat-value { font-family: var(--display); font-size: 25px; font-weight: 600; line-height: 1.1; }
+  .stat-label { font-size: 11.5px; color: var(--muted); margin-top: 3px; }
+
+  .passkey-display {
+    margin-top: 18px;
+    padding: 16px;
+    border-radius: 12px;
+    background: rgba(18,138,114,0.10);
+    border: 1px solid rgba(18,138,114,0.3);
+    text-align: center;
+    display: none;
+  }
+  .passkey-display.is-active { display: block; }
+  .passkey-display .code {
+    font-family: var(--display);
+    font-size: 28px;
+    letter-spacing: 4px;
+    color: var(--teal);
+    margin-top: 6px;
+  }
+  .passkey-actions { display: flex; justify-content: center; margin-top: 12px; }
+  .passkey-copy { border: 1px solid rgba(18,138,114,0.35); background: rgba(255,255,255,0.7); color: var(--teal); }
+  .passkey-copy:hover { border-color: var(--teal); }
+
+  .admin-toggle-row { display: flex; gap: 10px; flex-wrap: wrap; margin: 26px 0 14px; }
+  .admin-toggle-row button {
+    padding: 9px 16px;
+    border-radius: 999px;
+    border: 1px solid var(--glass-border);
+    background: var(--glass);
+    color: var(--text);
+    font-family: var(--body);
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .admin-toggle-row button.is-active { border-color: var(--gold); background: rgba(179,130,47,0.14); }
+
+  .admin-section { padding: 20px; margin-top: 14px; display: none; }
+  .admin-section.is-active { display: block; }
+
+  /* ---- Table toolbar: search + export ---- */
+  .admin-table-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 14px;
+  }
+  .admin-search { position: relative; flex: 1; min-width: 200px; }
+  .admin-search svg {
+    position: absolute; left: 12px; top: 50%; transform: translateY(-50%);
+    width: 15px; height: 15px; color: var(--muted); pointer-events: none;
+  }
+  .admin-search input {
+    width: 100%;
+    padding: 9px 12px 9px 34px;
+    border-radius: 999px;
+    border: 1px solid var(--line);
+    background: rgba(255,255,255,0.6);
+    font-family: var(--body);
+    font-size: 13px;
+    color: var(--text);
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
+  }
+  .admin-search input:focus {
+    outline: none;
+    border-color: var(--teal);
+    box-shadow: 0 0 0 3px rgba(18,138,114,0.14);
+  }
+
+  .btn-sm { padding: 8px 16px; font-size: 12.5px; border-radius: 999px; cursor: pointer; white-space: nowrap; }
+  .btn-danger { color: #b3312f; }
+  .btn-danger:hover { border-color: #b3312f; box-shadow: 0 10px 24px rgba(179,47,47,0.18); }
+
+  /* ---- Table itself: sticky header, zebra rows, hover ---- */
+  .admin-table-wrap {
+    overflow-x: auto;
+    border-radius: 14px;
+    border: 1px solid var(--line);
+    max-height: 480px;
+    overflow-y: auto;
+  }
+  table.admin-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  table.admin-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: rgba(242,239,232,0.96);
+    backdrop-filter: blur(8px);
+  }
+  table.admin-table th, table.admin-table td {
+    text-align: left;
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--line);
+    white-space: nowrap;
+  }
+  table.admin-table th {
+    color: var(--muted);
+    font-weight: 600;
+    font-size: 11px;
+    letter-spacing: 0.4px;
+    text-transform: uppercase;
+    cursor: pointer;
+    user-select: none;
+  }
+  table.admin-table th:hover { color: var(--text); }
+  table.admin-table tbody tr { transition: background 0.15s ease; }
+  table.admin-table tbody tr:nth-child(even) { background: rgba(255,255,255,0.4); }
+  table.admin-table tbody tr:hover { background: rgba(18,138,114,0.08); }
+  table.admin-table tbody tr:last-child td { border-bottom: none; }
+
+  .sort-caret { display: inline-block; margin-left: 4px; opacity: 0.35; font-size: 9px; }
+  .sort-caret.asc::after  { content: '\25B2'; }
+  .sort-caret.desc::after { content: '\25BC'; }
+  .sort-caret.asc, .sort-caret.desc { opacity: 0.9; color: var(--teal); }
+
+  .status-icon { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 50%; }
+  .status-icon.ok { background: rgba(18,138,114,0.15); color: var(--teal); }
+  .status-icon.no { background: rgba(179,47,47,0.12); color: #b3312f; }
+  .status-cell { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; }
+  .status-text { color: var(--muted); }
+  .table-link { border: 0; padding: 0; background: none; color: var(--teal); font: inherit; font-weight: 600; cursor: pointer; text-align: left; }
+  .table-link:hover { text-decoration: underline; }
+  .application-id { font-family: var(--display); color: var(--gold); font-size: 12px; letter-spacing: 0.25px; }
+  .response-button { border: 0; background: none; padding: 0; color: var(--teal); font: inherit; font-weight: 600; cursor: pointer; }
+  .response-button:hover { text-decoration: underline; }
+  .response-pending { color: var(--muted); font-size: 12px; }
+  .response-approved { color: var(--teal); font-weight: 600; font-size: 12px; }
+  .response-rejected { color: #b3312f; font-weight: 600; font-size: 12px; }
+  .delete-application { border: 0; background: none; padding: 0; color: #b3312f; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
+  .delete-application:hover { text-decoration: underline; }
+  .seller-response-card { display: none; margin: 0 0 20px; padding: 18px 20px; border-radius: 16px; border: 1px solid rgba(18,138,114,0.32); background: rgba(234,250,245,0.85); }
+  .seller-response-card.is-active { display: block; }
+  .seller-response-card.is-rejected { border-color: rgba(179,47,47,0.28); background: rgba(255,242,242,0.86); }
+  .seller-response-card h3 { color: var(--teal); font-size: 18px; }
+  .seller-response-card.is-rejected h3 { color: #b3312f; }
+  .seller-response-card p { margin: 5px 0 0; font-size: 13px; color: var(--text); }
+  .decision-choice { width: 100%; border: 1px solid var(--line); border-radius: 13px; padding: 15px; background: rgba(255,255,255,0.58); font: inherit; font-weight: 600; cursor: pointer; }
+  .decision-choice.approve { color: var(--teal); border-color: rgba(18,138,114,0.35); }
+  .decision-choice.reject { color: #b3312f; border-color: rgba(179,47,47,0.30); }
+  .application-details { max-width: 740px; text-align: left; }
+  .application-details h3 { margin-bottom: 4px; }
+  .detail-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 18px; margin: 18px 0; }
+  .detail-row { border-bottom: 1px solid var(--line); padding: 7px 0; }
+  .detail-row strong { display: block; color: var(--muted); font-size: 11px; font-weight: 600; letter-spacing: 0.3px; text-transform: uppercase; }
+  .detail-row span { display: block; font-size: 13px; overflow-wrap: anywhere; }
+  .detail-section-title { grid-column: 1 / -1; margin: 12px 0 -2px; font-family: var(--display); font-size: 15px; color: var(--teal); }
+  @media (max-width: 560px) { .detail-grid { grid-template-columns: 1fr; } }
+  .empty-note { color: var(--muted); font-size: 13px; padding: 22px 4px; text-align: center; }
+
+  /* ---- Data management (danger zone) ---- */
+  .admin-danger-zone {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    flex-wrap: wrap;
+    margin-top: 18px;
+    padding-top: 16px;
+    border-top: 1px dashed var(--line);
+  }
+  .admin-danger-zone strong { font-size: 13px; }
+  .admin-danger-zone p { font-size: 12px; color: var(--muted); margin: 2px 0 0; }
+
+  .logout-link { font-size: 12.5px; color: var(--muted); background: none; border: none; cursor: pointer; text-decoration: underline; }
+</style>
+</head>
+<body>
+
+<div id="siteView" class="view is-active">
+
+<!-- ============ NAVIGATION ============ -->
+<header class="nav" id="siteNav">
+  <div class="brand">Simu<span>Pesa</span></div>
+  <nav class="links">
+    <a href="#jinsi">Jinsi Inavyofanya Kazi</a>
+    <a href="#kwanini">Kwa Nini Sisi</a>
+    <a href="#wasiliana">Wasiliana Nasi</a>
+  </nav>
+  <a class="nav-call" href="tel:+255718122255">+255 718 122 255</a>
+</header>
+
+<!-- ============ HERO ============ -->
+<section class="hero">
+  <svg class="mark one" viewBox="0 0 200 200" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+    <rect x="55" y="10" width="90" height="180" rx="14" fill="none" stroke="currentColor" stroke-width="6"/>
+    <circle cx="100" cy="165" r="6" fill="currentColor"/>
+  </svg>
+  <svg class="mark two" viewBox="0 0 200 200" fill="none" stroke="currentColor" stroke-width="6" xmlns="http://www.w3.org/2000/svg">
+    <path d="M40 150 Q100 40 160 150" />
+    <path d="M60 150 Q100 70 140 150" />
+    <path d="M80 150 Q100 100 120 150" />
+  </svg>
+
+  <p class="hero-tag"><span class="dot"></span>Uhakiki wa NIDA · Malipo ndani ya siku moja</p>
+  <h1>Uza simu yako, pata pesa papo hapo.</h1>
+  <p class="lede">Tunanunua simu za aina zote — iPhone, Samsung, Tecno na zaidi.
+     Wasiliana nasi, tunakuongoza hatua kwa hatua hadi upate malipo yako.</p>
+
+  <div class="cta-row">
+    <a class="btn btn-primary-glow" href="#gate" onclick="showView('gateView');return false;">Pata Fomu &rarr;</a>
+  </div>
+  <p class="hero-note">Namba: +255 718 122 255 / +255 617 757 020 &nbsp;·&nbsp; Andaa kitambulisho chako cha NIDA kabla ya kuwasiliana</p>
+</section>
+
+<!-- ============ TRUST ============ -->
+<section class="trust">
+  <div class="section-inner glass-panel">
+    <div class="reveal">
+      <p class="label">Kwa nini utuamini</p>
+      <hr class="rule">
+    </div>
+    <div class="reveal">
+      <blockquote>Tunathamini <span>uwazi</span> na uadilifu katika kila muamala —
+        bei ya haki, uhakiki wa haraka, na malipo bila kuchelewa.</blockquote>
+      <p class="credit">— Timu ya SimuPesa</p>
+    </div>
+  </div>
+</section>
+
+<!-- ============ KWA NINI SISI (pillars) ============ -->
+<section class="pillars" id="kwanini">
+  <div class="section-inner">
+    <div class="reveal section-header-chip">
+      <h2>Kwa nini uuze simu yako kwetu</h2>
+      <hr class="rule">
+    </div>
+
+    <div class="pillar-grid">
+      <div class="pillar-card reveal-left">
+        <div class="num">01</div>
+        <h3>Uhakiki wa Haraka</h3>
+        <p>Tunakagua taarifa za simu yako na kitambulisho chako kwa muda mfupi, bila usumbufu.</p>
+      </div>
+
+      <div class="pillar-card reveal-up">
+        <div class="num">02</div>
+        <h3>Bei ya Haki</h3>
+        <p>Tunatoa bei inayolingana na hali halisi ya simu na soko la sasa.</p>
+      </div>
+
+      <div class="pillar-card reveal-right">
+        <div class="num">03</div>
+        <h3>Malipo ya Uhakika</h3>
+        <p>Baada ya uhakiki kukamilika, unalipwa papo hapo bila kusubiri.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ BRANDS MARQUEE ============ -->
+<div class="marquee-wrap">
+  <div class="marquee glass-panel reveal">
+    <div class="marquee-track" id="marqueeTrack"></div>
+  </div>
+</div>
+
+<!-- ============ JINSI INAVYOFANYA KAZI (steps) ============ -->
+<section class="steps" id="jinsi">
+  <div class="section-inner">
+    <div class="reveal">
+      <h2>Hatua za kuuza simu yako</h2>
+      <hr class="rule">
+    </div>
+    <p class="steps-intro reveal">Mchakato mfupi na wa moja kwa moja, kuanzia mawasiliano ya kwanza hadi pesa mkononi.</p>
+
+    <div class="step-list glass-panel reveal">
+      <div class="step-row">
+        <div class="step-num">1</div>
+        <div>
+          <h3>Wasiliana nasi</h3>
+          <p>Piga simu au tuma ujumbe WhatsApp kwa namba +255 718 122 255 au +255 617 757 020 kutueleza kuhusu simu yako.</p>
+        </div>
+      </div>
+
+      <div class="step-row">
+        <div class="step-num">2</div>
+        <div>
+          <h3>Tunakutumia fomu</h3>
+          <p>Tutakutumia fomu fupi ya kujaza taarifa za simu yako na taarifa zako binafsi.</p>
+        </div>
+      </div>
+
+      <div class="step-row">
+        <div class="step-num">3</div>
+        <div>
+          <h3>Ambatanisha picha</h3>
+          <p>Piga picha ya simu yako na picha ya kitambulisho chako cha NIDA, kisha ziambatanishe kwenye fomu kwa ajili ya uhakiki.</p>
+        </div>
+      </div>
+
+      <div class="step-row">
+        <div class="step-num">4</div>
+        <div>
+          <h3>Uhakiki na makubaliano</h3>
+          <p>Tunakagua taarifa ulizotuma na kukubaliana nawe bei ya mwisho ya simu.</p>
+        </div>
+      </div>
+
+      <div class="step-row">
+        <div class="step-num">5</div>
+        <div>
+          <h3>Pokea malipo</h3>
+          <p>Mara makubaliano yanapokamilika, unalipwa pesa yako papo hapo.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ WASILIANA NASI ============ -->
+<section class="contact" id="wasiliana">
+  <div class="section-inner glass-panel">
+    <div class="reveal">
+      <h2>Tayari kuuza simu yako?</h2>
+      <p>Wasiliana nasi kwanza kwa simu au WhatsApp, tutakutumia fomu ya kujaza
+         na kukuongoza kwenye hatua zote hadi malipo.</p>
+
+      <div class="direct-contact">
+        <div class="cta-row">
+          <a class="btn btn-primary-glow" href="#gate" onclick="showView('gateView');return false;">Pata Fomu &rarr;</a>
+        </div>
+      </div>
+
+      <ul class="requirements">
+        <li>Andaa kitambulisho chako cha NIDA kabla ya kutuma fomu.</li>
+        <li>Piga picha wazi ya simu yako kwa ajili ya uhakiki.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============ FOOTER ============ -->
+<div class="footer-wrap">
+  <footer class="glass-panel">
+    <div class="section-inner">
+      <div>
+        <div class="brand">Simu<span>Pesa</span></div>
+        <p style="margin-top: 12px; max-width: 260px;">Tunanunua simu za mkononi
+           za aina zote kwa uaminifu, uhakiki wa haraka na malipo ya papo hapo.</p>
+      </div>
+      <div>
+        <h3>WASILIANA</h3>
+        <p><a href="tel:+255718122255">+255 718 122 255</a></p>
+        <p><a href="tel:+255617757020">+255 617 757 020</a></p>
+        <p><a href="https://wa.me/qr/QCXHWFGUIQ74D1" target="_blank" rel="noopener">WhatsApp</a></p>
+      </div>
+      <div>
+        <h3>MUHIMU</h3>
+        <p>Kitambulisho cha NIDA kinahitajika</p>
+        <p>Picha ya simu inahitajika kwa uhakiki</p>
+      </div>
+    </div>
+    <div class="footer-bottom">
+      <span>© 2026 SimuPesa</span>
+      <span>Tunanunua, tunalipa, kwa haraka.</span>
+      <a href="#admin" onclick="openAdminPortal();return false;" style="font-size:11px;">Admin</a>
+    </div>
+  </footer>
+</div>
+
+<!-- Floating quick-action buttons: Call + WhatsApp -->
+<div class="float-actions">
+  <a class="float-call" href="tel:+255718122255" aria-label="Piga Simu">
+    <svg viewBox="0 0 24 24" fill="#fbfaf7" xmlns="http://www.w3.org/2000/svg">
+      <path d="M6.62 10.79a15.05 15.05 0 0 0 6.59 6.59l2.2-2.2a1 1 0 0 1 1.02-.24c1.12.37 2.33.57 3.57.57a1 1 0 0 1 1 1V20a1 1 0 0 1-1 1C10.61 21 3 13.39 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1c0 1.24.2 2.45.57 3.57a1 1 0 0 1-.25 1.02l-2.2 2.2z"/>
+    </svg>
+  </a>
+  <a class="float-wa" href="https://wa.me/qr/QCXHWFGUIQ74D1" target="_blank" rel="noopener" aria-label="WhatsApp">
+    <svg viewBox="0 0 24 24" fill="#fbfaf7" xmlns="http://www.w3.org/2000/svg">
+      <path d="M12.04 2C6.58 2 2.13 6.45 2.13 11.91c0 1.87.5 3.62 1.4 5.15L2 22l5.09-1.5a9.87 9.87 0 0 0 4.95 1.33h.01c5.46 0 9.91-4.45 9.91-9.91S17.5 2 12.04 2zm0 18.06h-.01a8.1 8.1 0 0 1-4.13-1.13l-.3-.18-3.02.89.9-2.94-.19-.3a8.07 8.07 0 0 1-1.24-4.29c0-4.47 3.64-8.11 8.11-8.11 2.17 0 4.2.84 5.73 2.38a8.05 8.05 0 0 1 2.38 5.73c0 4.47-3.64 8.11-8.11 8.11zm4.45-6.07c-.24-.12-1.44-.71-1.66-.79-.22-.08-.39-.12-.55.12-.16.24-.63.79-.78.95-.14.16-.29.18-.53.06-.24-.12-1.03-.38-1.96-1.21-.72-.65-1.21-1.44-1.35-1.68-.14-.24-.02-.37.11-.49.11-.11.24-.29.36-.43.12-.14.16-.24.24-.4.08-.16.04-.3-.02-.42-.06-.12-.55-1.33-.76-1.82-.2-.48-.4-.42-.55-.42-.14 0-.31-.02-.47-.02-.16 0-.42.06-.64.3-.22.24-.84.82-.84 2s.86 2.32.98 2.48c.12.16 1.69 2.58 4.1 3.62.57.25 1.02.4 1.37.51.58.18 1.1.16 1.51.1.46-.07 1.44-.59 1.64-1.15.2-.57.2-1.05.14-1.15-.06-.1-.22-.16-.46-.28z"/>
+    </svg>
+  </a>
+</div>
+
+</div><!-- /#siteView -->
+
+<!-- ============ GATE VIEW (passkey entry) ============ -->
+<div id="gateView" class="view">
+  <div class="app-topbar">
+    <button class="back-link" onclick="showView('siteView')">&larr; Rudi kwenye tovuti</button>
+    <span class="app-title">SimuPesa &mdash; Fomu</span>
+    <span></span>
+  </div>
+  <div class="app-view">
+    <div class="app-card glass-panel">
+      <p class="label" style="font-size:12.5px;color:var(--muted);">Ingia kwa fomu yako</p>
+      <h1>Weka namba na tarakimu 6</h1>
+      <hr class="rule" style="margin-left:0;">
+      <p class="sub">Tumia namba ya simu uliyompa admin na tarakimu 6 ulizotumiwa naye kuingia kwenye fomu ya kuuza simu.</p>
+
+      <form id="gateForm" autocomplete="off">
+        <div class="field">
+          <label for="gatePhone">Namba ya Simu</label>
+          <input type="tel" id="gatePhone" placeholder="0712 345 678" required>
+        </div>
+        <div class="field">
+          <label for="gateCode">Tarakimu 6 (Passkey)</label>
+          <input type="text" id="gateCode" maxlength="6" inputmode="numeric" placeholder="......" required>
+        </div>
+        <p class="app-error" id="gateError"></p>
+        <div class="app-btn-row">
+          <button type="submit" class="btn" style="border:none;cursor:pointer;">Ingia</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- ============ FORM VIEW (multi-section phone intake form) ============ -->
+<div id="formView" class="view">
+  <div class="app-topbar">
+    <button class="back-link" onclick="confirmLeaveForm()">&larr; Rudi</button>
+    <span class="app-title" id="formTopbarName">Fomu ya Kuuza Simu Used</span>
+    <span></span>
+  </div>
+  <div class="app-view">
+    <div class="form-shell">
+      <p class="form-progress">Fomu ya kuuza simu used. Jaza taarifa zote kwa usahihi; sehemu zenye <span style="color:#b3312f;">*</span> ni za lazima.</p>
+      <div class="passkey-display is-active" style="margin:0 0 20px;">
+        <span style="font-size:12.5px;color:var(--muted);">Namba yako ya maombi</span>
+        <div class="code" id="sellerApplicationId">—</div>
+      </div>
+      <div class="seller-response-card" id="sellerResponseCard">
+        <h3 id="sellerResponseTitle">Majibu ya Maombi</h3>
+        <p id="sellerResponseMessage"></p>
+      </div>
+
+      <form id="sellForm" autocomplete="off">
+
+        <div class="form-section glass-panel">
+          <h2><span class="letter">A</span>Taarifa za Muuzaji</h2>
+          <hr class="rule">
+          <div class="field-grid">
+            <div class="field"><label>Jina kamili *</label><input type="text" id="a_fullname" required></div>
+            <div class="field"><label>Namba ya simu *</label><input type="tel" id="a_phone" required></div>
+            <div class="field"><label>Kitambulisho (NIDA) *</label><input type="text" id="a_nida" required></div>
+            <div class="field"><label>Eneo anapoishi *</label><input type="text" id="a_location" required></div>
+            <div class="field"><label>Tarehe ya kuuza *</label><input type="date" id="a_saledate" required></div>
+            <div class="field"><label>Sababu ya kuuza simu</label><input type="text" id="a_reason"></div>
+          </div>
+        </div>
+
+        <div class="form-section glass-panel">
+          <h2><span class="letter">B</span>Utambulisho wa Simu</h2>
+          <hr class="rule">
+          <div class="field-grid">
+            <div class="field"><label>Brand *</label><input type="text" id="b_brand" required></div>
+            <div class="field"><label>Model *</label><input type="text" id="b_model" required></div>
+            <div class="field"><label>Model Number (Hiari)</label><input type="text" id="b_modelnum"></div>
+            <div class="field"><label>IMEI 1 (Hiari)</label><input type="text" id="b_imei1"></div>
+            <div class="field"><label>IMEI 2 (Hiari)</label><input type="text" id="b_imei2"></div>
+            <div class="field"><label>Serial Number (Hiari)</label><input type="text" id="b_serial"></div>
+            <div class="field">
+              <label>Storage *</label>
+              <select id="b_storage" required>
+                <option value="">Chagua...</option>
+                <option>64GB</option><option>128GB</option><option>256GB</option><option>512GB</option><option>1TB</option>
+              </select>
+            </div>
+          </div>
+          <div class="check-row">
+            <span class="row-label">Network *</span>
+            <div class="radio-group">
+              <label><input type="radio" name="b_network" value="locked" required> Locked</label>
+              <label><input type="radio" name="b_network" value="unlocked"> Unlocked</label>
+            </div>
+          </div>
+          <div class="check-row">
+            <span class="row-label">Dual SIM</span>
+            <div class="radio-group">
+              <label><input type="radio" name="b_dualsim" value="ndiyo"> Ndiyo</label>
+              <label><input type="radio" name="b_dualsim" value="hapana"> Hapana</label>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-section glass-panel">
+          <h2><span class="letter">C</span>Hali ya Nje ya Simu</h2>
+          <hr class="rule">
+          <div class="check-row">
+        <span class="row-label">Screen</span>
+        <div class="radio-group"><label><input type="radio" name="c_screen" value="nzuri"> Nzuri</label>
+<label><input type="radio" name="c_screen" value="scratches"> Ina scratches</label>
+<label><input type="radio" name="c_screen" value="imevunjika"> Imevunjika</label>
+</div>
+      </div>
+<div class="check-row">
+        <span class="row-label">Touch</span>
+        <div class="radio-group"><label><input type="radio" name="c_touch" value="nzima"> Nzima</label>
+<label><input type="radio" name="c_touch" value="tatizo"> Ina tatizo</label>
+</div>
+      </div>
+<div class="check-row">
+        <span class="row-label">Frame/Body</span>
+        <div class="radio-group"><label><input type="radio" name="c_frame" value="nzuri"> Nzuri</label>
+<label><input type="radio" name="c_frame" value="scratches"> Scratches</label>
+<label><input type="radio" name="c_frame" value="dents"> Dents</label>
+</div>
+      </div>
+<div class="check-row">
+        <span class="row-label">Back Cover</span>
+        <div class="radio-group"><label><input type="radio" name="c_backcover" value="nzuri"> Nzuri</label>
+<label><input type="radio" name="c_backcover" value="scratches"> Scratches</label>
+<label><input type="radio" name="c_backcover" value="imevunjika"> Imevunjika</label>
+</div>
+      </div>
+<div class="check-row">
+        <span class="row-label">Camera Glass</span>
+        <div class="radio-group"><label><input type="radio" name="c_camglass" value="nzuri"> Nzuri</label>
+<label><input type="radio" name="c_camglass" value="imepasuka"> Imepasuka</label>
+</div>
+      </div>
+<div class="check-row">
+        <span class="row-label">Camera Lens</span>
+        <div class="radio-group"><label><input type="radio" name="c_camlens" value="nzima"> Nzima</label>
+<label><input type="radio" name="c_camlens" value="tatizo"> Ina tatizo</label>
+</div>
+      </div>
+<div class="check-row">
+        <span class="row-label">Buttons</span>
+        <div class="radio-group"><label><input type="radio" name="c_buttons" value="nzima"> Nzima</label>
+<label><input type="radio" name="c_buttons" value="tatizo"> Ina tatizo</label>
+</div>
+      </div>
+<div class="check-row">
+        <span class="row-label">Charging Port</span>
+        <div class="radio-group"><label><input type="radio" name="c_chargeport" value="nzuri"> Nzuri</label>
+<label><input type="radio" name="c_chargeport" value="loose"> Loose</label>
+<label><input type="radio" name="c_chargeport" value="tatizo"> Ina tatizo</label>
+</div>
+      </div>
+<div class="check-row">
+        <span class="row-label">SIM Tray</span>
+        <div class="radio-group"><label><input type="radio" name="c_simtray" value="nzima"> Nzima</label>
+<label><input type="radio" name="c_simtray" value="tatizo"> Ina tatizo</label>
+</div>
+      </div>
+<div class="check-row">
+        <span class="row-label">Speaker</span>
+        <div class="radio-group"><label><input type="radio" name="c_speaker" value="nzima"> Nzima</label>
+<label><input type="radio" name="c_speaker" value="tatizo"> Ina tatizo</label>
+</div>
+      </div>
+<div class="check-row">
+        <span class="row-label">Microphone</span>
+        <div class="radio-group"><label><input type="radio" name="c_mic" value="nzima"> Nzima</label>
+<label><input type="radio" name="c_mic" value="tatizo"> Ina tatizo</label>
+</div>
+      </div>
+        </div>
+
+        <div class="form-section glass-panel">
+          <h2><span class="letter">D</span>Battery</h2>
+          <hr class="rule">
+          <div class="field"><label>Battery Health (%) *</label><input type="number" id="d_health" min="0" max="100" required></div>
+          <div class="check-row"><span class="row-label">Battery imewahi kubadilishwa?</span><div class="radio-group"><label><input type="radio" name="d_replaced" value="ndiyo"> Ndiyo</label><label><input type="radio" name="d_replaced" value="hapana"> Hapana</label><label><input type="radio" name="d_replaced" value="hajui"> Hajui</label></div></div>
+          <div class="check-row"><span class="row-label">Inachaji vizuri?</span><div class="radio-group"><label><input type="radio" name="d_chargesok" value="ndiyo"> Ndiyo</label><label><input type="radio" name="d_chargesok" value="hapana"> Hapana</label></div></div>
+          <div class="check-row"><span class="row-label">Inapata joto kupita kawaida?</span><div class="radio-group"><label><input type="radio" name="d_overheats" value="ndiyo"> Ndiyo</label><label><input type="radio" name="d_overheats" value="hapana"> Hapana</label></div></div>
+          <div class="check-row"><span class="row-label">Battery inashuka haraka?</span><div class="radio-group"><label><input type="radio" name="d_drainsfast" value="ndiyo"> Ndiyo</label><label><input type="radio" name="d_drainsfast" value="hapana"> Hapana</label></div></div>
+        </div>
+
+        <div class="form-section glass-panel">
+          <h2><span class="letter">F</span>Camera</h2>
+          <hr class="rule">
+          <div class="check-row">
+        <span class="row-label">Front Camera</span>
+        <div class="radio-group"><label><input type="radio" name="f_front" value="nzima"> Nzima</label>
+<label><input type="radio" name="f_front" value="tatizo"> Ina tatizo</label>
+</div>
+      </div>
+<div class="check-row">
+        <span class="row-label">Main Camera</span>
+        <div class="radio-group"><label><input type="radio" name="f_main" value="nzima"> Nzima</label>
+<label><input type="radio" name="f_main" value="tatizo"> Ina tatizo</label>
+</div>
+      </div>
+<div class="check-row">
+        <span class="row-label">Ultrawide</span>
+        <div class="radio-group"><label><input type="radio" name="f_ultrawide" value="nzima"> Nzima</label>
+<label><input type="radio" name="f_ultrawide" value="tatizo"> Ina tatizo</label>
+</div>
+      </div>
+<div class="check-row">
+        <span class="row-label">Telephoto</span>
+        <div class="radio-group"><label><input type="radio" name="f_telephoto" value="nzima"> Nzima</label>
+<label><input type="radio" name="f_telephoto" value="tatizo"> Ina tatizo</label>
+</div>
+      </div>
+<div class="check-row">
+        <span class="row-label">Flash</span>
+        <div class="radio-group"><label><input type="radio" name="f_flash" value="nzima"> Nzima</label>
+<label><input type="radio" name="f_flash" value="tatizo"> Ina tatizo</label>
+</div>
+      </div>
+<div class="check-row">
+        <span class="row-label">Video Recording</span>
+        <div class="radio-group"><label><input type="radio" name="f_video" value="nzima"> Nzima</label>
+<label><input type="radio" name="f_video" value="tatizo"> Ina tatizo</label>
+</div>
+      </div>
+<div class="check-row">
+        <span class="row-label">Camera Focus</span>
+        <div class="radio-group"><label><input type="radio" name="f_focus" value="nzima"> Nzima</label>
+<label><input type="radio" name="f_focus" value="tatizo"> Ina tatizo</label>
+</div>
+      </div>
+        </div>
+
+        <div class="form-section glass-panel">
+          <h2><span class="letter">G</span>Mfumo &amp; Security</h2>
+          <hr class="rule">
+          <div class="check-row">
+        <span class="row-label">Phone inawaka vizuri?</span>
+        <div class="radio-group"><label><input type="radio" name="g_powers" value="ndiyo"> Ndiyo</label>
+<label><input type="radio" name="g_powers" value="hapana"> Hapana</label>
+</div>
+      </div>
+<div class="check-row">
+        <span class="row-label">Fingerprint</span>
+        <div class="radio-group"><label><input type="radio" name="g_fingerprint" value="nzima"> Nzima</label>
+<label><input type="radio" name="g_fingerprint" value="tatizo"> Tatizo</label>
+<label><input type="radio" name="g_fingerprint" value="haina"> Haina</label>
+</div>
+      </div>
+<div class="check-row">
+        <span class="row-label">Face ID/Face Unlock</span>
+        <div class="radio-group"><label><input type="radio" name="g_faceid" value="nzima"> Nzima</label>
+<label><input type="radio" name="g_faceid" value="tatizo"> Tatizo</label>
+<label><input type="radio" name="g_faceid" value="haina"> Haina</label>
+</div>
+      </div>
+<div class="check-row">
+        <span class="row-label">Wi-Fi</span>
+        <div class="radio-group"><label><input type="radio" name="g_wifi" value="nzima"> Nzima</label>
+<label><input type="radio" name="g_wifi" value="tatizo"> Ina tatizo</label>
+</div>
+      </div>
+<div class="check-row">
+        <span class="row-label">Bluetooth</span>
+        <div class="radio-group"><label><input type="radio" name="g_bt" value="nzima"> Nzima</label>
+<label><input type="radio" name="g_bt" value="tatizo"> Ina tatizo</label>
+</div>
+      </div>
+<div class="check-row">
+        <span class="row-label">GPS</span>
+        <div class="radio-group"><label><input type="radio" name="g_gps" value="nzima"> Nzima</label>
+<label><input type="radio" name="g_gps" value="tatizo"> Ina tatizo</label>
+</div>
+      </div>
+<div class="check-row">
+        <span class="row-label">Mobile Network</span>
+        <div class="radio-group"><label><input type="radio" name="g_network" value="nzima"> Nzima</label>
+<label><input type="radio" name="g_network" value="tatizo"> Ina tatizo</label>
+</div>
+      </div>
+<div class="check-row">
+        <span class="row-label">Calls</span>
+        <div class="radio-group"><label><input type="radio" name="g_calls" value="nzima"> Nzima</label>
+<label><input type="radio" name="g_calls" value="tatizo"> Ina tatizo</label>
+</div>
+      </div>
+<div class="check-row">
+        <span class="row-label">SMS</span>
+        <div class="radio-group"><label><input type="radio" name="g_sms" value="nzima"> Nzima</label>
+<label><input type="radio" name="g_sms" value="tatizo"> Ina tatizo</label>
+</div>
+      </div>
+<div class="check-row">
+        <span class="row-label">Internet/Data</span>
+        <div class="radio-group"><label><input type="radio" name="g_internet" value="nzima"> Nzima</label>
+<label><input type="radio" name="g_internet" value="tatizo"> Ina tatizo</label>
+</div>
+      </div>
+        </div>
+
+        <div class="form-section glass-panel">
+          <h2><span class="letter">H</span>Historia ya Simu</h2>
+          <hr class="rule">
+          <div class="check-row">
+        <span class="row-label">Simu imewahi kufunguliwa?</span>
+        <div class="radio-group"><label><input type="radio" name="h_opened" value="ndiyo"> Ndiyo</label>
+<label><input type="radio" name="h_opened" value="hapana"> Hapana</label>
+<label><input type="radio" name="h_opened" value="hajui"> Hajui</label>
+</div>
+      </div>
+<div class="check-row">
+        <span class="row-label">Imewahi kutengenezwa?</span>
+        <div class="radio-group"><label><input type="radio" name="h_repaired" value="ndiyo"> Ndiyo</label>
+<label><input type="radio" name="h_repaired" value="hapana"> Hapana</label>
+</div>
+      </div>
+<div class="check-row">
+        <span class="row-label">Imewahi kubadilishwa screen?</span>
+        <div class="radio-group"><label><input type="radio" name="h_screenchanged" value="ndiyo"> Ndiyo</label>
+<label><input type="radio" name="h_screenchanged" value="hapana"> Hapana</label>
+</div>
+      </div>
+<div class="check-row">
+        <span class="row-label">Imewahi kubadilishwa battery?</span>
+        <div class="radio-group"><label><input type="radio" name="h_batterychanged" value="ndiyo"> Ndiyo</label>
+<label><input type="radio" name="h_batterychanged" value="hapana"> Hapana</label>
+</div>
+      </div>
+<div class="check-row">
+        <span class="row-label">Imewahi kuanguka sana?</span>
+        <div class="radio-group"><label><input type="radio" name="h_dropped" value="ndiyo"> Ndiyo</label>
+<label><input type="radio" name="h_dropped" value="hapana"> Hapana</label>
+</div>
+      </div>
+<div class="check-row">
+        <span class="row-label">Imewahi kuingia maji?</span>
+        <div class="radio-group"><label><input type="radio" name="h_water" value="ndiyo"> Ndiyo</label>
+<label><input type="radio" name="h_water" value="hapana"> Hapana</label>
+<label><input type="radio" name="h_water" value="hajui"> Hajui</label>
+</div>
+      </div>
+          <div class="field"><label>Kuna spare parts zilizobadilishwa?</label><input type="text" id="h_spareparts"></div>
+        </div>
+
+        <div class="form-section glass-panel">
+          <h2><span class="letter">I</span>Vifaa Vinavyoambatana <span style="font-size:13px;font-family:var(--body);font-weight:400;color:var(--muted);">(Hiari)</span></h2>
+          <hr class="rule">
+          <div class="radio-group">
+            <label><input type="checkbox" id="i_receipt"> Receipt</label>
+            <label><input type="checkbox" id="i_warranty"> Warranty Card</label>
+            <label><input type="checkbox" id="i_invoice"> Purchase Invoice</label>
+          </div>
+          <div class="field"><label>Other</label><input type="text" id="i_other"></div>
+          <button class="photo-slot" id="photoSupportingSlot" type="button" onclick="openPhotoPicker('supporting')" style="width:100%;margin-top:12px;">
+            <div class="ph-icon">&#128196;</div>
+            <img id="photoSupportingPreview" alt="Picha ya warranty, receipt au invoice">
+            <div class="ph-label">Picha ya warranty / receipt / invoice (Hiari)</div>
+          </button>
+          <input class="photo-file-input" type="file" id="photoSupportingGallery" accept="image/*">
+          <input class="photo-file-input" type="file" id="photoSupportingCamera" accept="image/*" capture="environment">
+        </div>
+
+        <div class="form-section glass-panel">
+          <h2><span class="letter">J</span>Picha za Lazima</h2>
+          <hr class="rule">
+          <p class="sub" style="margin-top:0;">Piga picha wazi ya mbele na nyuma ya simu.</p>
+          <div class="photo-upload">
+            <button class="photo-slot" id="photoFrontSlot" type="button" onclick="openPhotoPicker('front')">
+              <div class="ph-icon">&#128247;</div>
+              <img id="photoFrontPreview" alt="Mbele ya simu">
+              <div class="ph-label">Mbele ya simu *</div>
+            </button>
+            <button class="photo-slot" id="photoBackSlot" type="button" onclick="openPhotoPicker('back')">
+              <div class="ph-icon">&#128247;</div>
+              <img id="photoBackPreview" alt="Nyuma ya simu">
+              <div class="ph-label">Nyuma ya simu *</div>
+            </button>
+          </div>
+          <input class="photo-file-input" type="file" id="photoFrontGallery" accept="image/*">
+          <input class="photo-file-input" type="file" id="photoFrontCamera" accept="image/*" capture="environment">
+          <input class="photo-file-input" type="file" id="photoBackGallery" accept="image/*">
+          <input class="photo-file-input" type="file" id="photoBackCamera" accept="image/*" capture="environment">
+        </div>
+
+        <div class="form-section glass-panel">
+          <h2><span class="letter">K</span>Bei</h2>
+          <hr class="rule">
+          <div class="field"><label>Bei anayotaka muuzaji (TZS) *</label><input type="number" id="k_askingprice" min="0" inputmode="numeric" required></div>
+          <p class="sub" style="margin:12px 0 0;">Simu itauzwa kwa bei ya makubaliano kati ya muuzaji na mnunuzi.</p>
+        </div>
+
+        <div class="form-section glass-panel">
+          <h2>Uthibitisho wa Muuzaji</h2>
+          <hr class="rule">
+          <p class="sub" style="margin-top:0;">Mimi ninathibitisha kuwa taarifa nilizotoa kuhusu simu hii ni za kweli kwa kadiri ya ufahamu wangu.</p>
+          <div class="field-grid">
+            <div class="field"><label>Jina (Sahihi ya maandishi) *</label><input type="text" id="conf_signature" required></div>
+            <div class="field"><label>Tarehe *</label><input type="date" id="conf_date" required></div>
+          </div>
+        </div>
+
+        <p class="app-error" id="formError"></p>
+        <div class="form-submit-bar">
+          <button type="submit" class="btn" style="border:none;cursor:pointer;">Maliza Maombi</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- ============ CONFIRM MODAL ============ -->
+<div id="confirmModal" class="modal-overlay">
+  <div class="modal-card glass-panel">
+    <h3>Thibitisha Maombi</h3>
+    <p>Baada ya kubonyeza <strong>Dhibitisha</strong>, PDF ya fomu yako pamoja na picha zako zitapakuliwa kwenye simu yako, kisha chaguo za kushea zitafunguka ili utume kwa admin kupitia WhatsApp.</p>
+    <div class="app-btn-row">
+      <button class="btn ghost" style="border:none;cursor:pointer;" onclick="closeConfirmModal()">Ghairi</button>
+      <button class="btn" id="confirmSubmitBtn" style="border:none;cursor:pointer;" onclick="finalizeSubmission()">Dhibitisha</button>
+    </div>
+    <p class="app-error" id="confirmError"></p>
+  </div>
+</div>
+
+<!-- ============ SUCCESS MODAL ============ -->
+<div id="successModal" class="modal-overlay">
+  <div class="modal-card glass-panel submission-success-card">
+    <div class="success-spinner" aria-label="Inachakata maombi"></div>
+    <h3>Maombi yako yametumwa</h3>
+    <p>Yataanza kufanyiwa kazi hivi punde.</p>
+    <p id="successMessage">PDF imepakuliwa. Fungua chaguo la kushea ulilopewa na uchague WhatsApp kutuma kwa admin.</p>
+    <div class="success-contact">
+      <strong>Kwa mawasiliano zaidi, wasiliana nasi</strong>
+      <a href="tel:+255718122255">+255 718 122 255</a>
+      <a href="tel:+255617757020">+255 617 757 020</a>
+    </div>
+    <div class="app-btn-row">
+      <button class="btn" type="button" style="border:none;cursor:pointer;" onclick="openSellerPdfViewer()">Tazama PDF</button>
+      <button class="btn ghost" style="border:none;cursor:pointer;" onclick="closeSuccessModal()">Funga</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ SELLER PDF VIEWER ============ -->
+<div id="sellerPdfModal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="sellerPdfTitle">
+  <div class="modal-card glass-panel pdf-viewer-card">
+    <h3 id="sellerPdfTitle">Fomu yako ya maombi</h3>
+    <iframe class="pdf-viewer-frame" id="sellerPdfFrame" title="PDF ya maombi ya muuzaji"></iframe>
+    <div class="app-btn-row"><button class="btn ghost" type="button" style="border:none;cursor:pointer;" onclick="closeSellerPdfViewer()">Funga</button></div>
+  </div>
+</div>
+
+<!-- ============ PHOTO SOURCE PICKER ============ -->
+<div id="photoSourceModal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="photoSourceTitle">
+  <div class="modal-card glass-panel photo-source-card">
+    <h3 id="photoSourceTitle">Ongeza picha</h3>
+    <p>Chagua namna ya kuweka picha ya simu.</p>
+    <div class="app-btn-row">
+      <button class="btn" type="button" style="border:none;cursor:pointer;" onclick="selectPhotoSource('gallery')">Chagua kutoka gallery</button>
+      <button class="btn ghost" type="button" style="border:none;cursor:pointer;" onclick="selectPhotoSource('camera')">Piga picha kwa camera</button>
+      <button class="logout-link" type="button" onclick="closePhotoPicker()">Ghairi</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ APPLICATION DETAILS (admin) ============ -->
+<div id="applicationDetailsModal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="applicationDetailsTitle">
+  <div class="modal-card glass-panel application-details">
+    <h3 id="applicationDetailsTitle">Maelezo ya Maombi</h3>
+    <p class="sub" id="applicationDetailsSubtitle"></p>
+    <div class="detail-grid" id="applicationDetailsBody"></div>
+    <div class="app-btn-row"><button class="btn ghost" type="button" id="inspectorPdfBtn" style="border:none;cursor:pointer;" onclick="downloadInspectorPdf()">PDF ya Mkaguzi</button><button class="btn" type="button" id="adminPdfBtn" style="border:none;cursor:pointer;" onclick="downloadAdminPdf()">PDF ya Admin</button><button class="btn ghost" type="button" style="border:none;cursor:pointer;" onclick="closeApplicationDetails()">Funga</button></div>
+  </div>
+</div>
+
+<!-- ============ ADMIN RESPONSE ============ -->
+<div id="adminResponseModal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="adminResponseTitle">
+  <div class="modal-card glass-panel">
+    <h3 id="adminResponseTitle">Jibu la maombi</h3>
+    <p id="adminResponseApplicant" class="sub"></p>
+    <div id="responseChoices" class="app-btn-row" style="flex-direction:column;align-items:stretch;">
+      <button class="decision-choice approve" type="button" onclick="chooseResponse('approved')">Imekubaliwa</button>
+      <button class="decision-choice reject" type="button" onclick="chooseResponse('rejected')">Imekataliwa</button>
+    </div>
+    <form id="adminResponseForm" style="display:none;" autocomplete="off">
+      <div class="field"><label id="responseReasonLabel">Sababu ya kukubaliwa</label><textarea id="responseReason" rows="3" required></textarea></div>
+      <div class="field" id="agreedPriceField"><label>Bei iliyokubaliwa (TZS)</label><input type="number" id="responseAgreedPrice" min="0" inputmode="numeric" required></div>
+      <p class="app-error" id="adminResponseError"></p>
+      <div class="app-btn-row"><button class="btn ghost" type="button" style="border:none;cursor:pointer;" onclick="resetResponseModal()">Rudi</button><button class="btn" type="submit" style="border:none;cursor:pointer;">Tuma majibu</button></div>
+    </form>
+    <div class="app-btn-row" id="responseCloseRow"><button class="logout-link" type="button" onclick="closeAdminResponse()">Funga</button></div>
+  </div>
+</div>
+
+<!-- ============ ADMIN LOGIN VIEW ============ -->
+<div id="adminLoginView" class="view">
+  <div class="app-topbar">
+    <button class="back-link" onclick="showView('siteView')">&larr; Rudi kwenye tovuti</button>
+    <span class="app-title">SimuPesa &mdash; Admin</span>
+    <span></span>
+  </div>
+  <div class="app-view">
+    <div class="app-card glass-panel">
+      <h1>Admin Login</h1>
+      <hr class="rule" style="margin-left:0;">
+      <form id="adminLoginForm" autocomplete="off">
+        <div class="field"><label for="adminEmail">Email</label><input type="email" id="adminEmail" required></div>
+        <div class="field"><label for="adminPassword">Password</label><input type="password" id="adminPassword" required></div>
+        <p class="app-error" id="adminLoginError"></p>
+        <div class="app-btn-row">
+          <button type="submit" class="btn" style="border:none;cursor:pointer;">Ingia</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- ============ ADMIN DASHBOARD VIEW ============ -->
+<div id="adminDashboardView" class="view">
+  <div class="app-topbar">
+    <button class="back-link" onclick="showView('siteView')">&larr; Tovuti</button>
+    <span class="app-title">Dashboard ya Admin</span>
+    <button class="logout-link" onclick="adminLogout()">Toka</button>
+  </div>
+  <div class="app-view">
+    <div class="admin-shell admin-shell-wide">
+
+      <div class="reveal" style="margin-bottom:22px;">
+        <p class="hero-tag" style="margin:0 0 8px;"><span class="dot"></span>Muhtasari wa shughuli</p>
+        <h1 style="font-size:clamp(28px,4vw,40px);">Karibu, Admin</h1>
+        <p class="sub" style="margin:7px 0 0;">Fuatilia usajili, maombi yaliyokamilika, na taarifa za wauzaji sehemu moja.</p>
+      </div>
+
+      <div class="admin-stats-grid" aria-label="Muhtasari wa dashboard">
+        <div class="stat-card glass-panel"><span class="stat-icon stat-icon-gold"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg></span><div><div class="stat-value" id="statApplicants">0</div><div class="stat-label">Wauzaji waliosajiliwa</div></div></div>
+        <div class="stat-card glass-panel"><span class="stat-icon stat-icon-teal"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6 9 17l-5-5"/></svg></span><div><div class="stat-value" id="statCompleted">0</div><div class="stat-label">Fomu zilizokamilika</div></div></div>
+        <div class="stat-card glass-panel"><span class="stat-icon stat-icon-indigo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span><div><div class="stat-value" id="statPending">0</div><div class="stat-label">Bado hawajaingia</div></div></div>
+        <div class="stat-card glass-panel"><span class="stat-icon stat-icon-muted"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"/><path d="m7 15 3-3 3 2 5-6"/></svg></span><div><div class="stat-value" id="statLoginRate">0%</div><div class="stat-label">Kiwango cha kuingia</div></div></div>
+      </div>
+
+      <div class="app-card glass-panel" style="max-width:none;text-align:left;">
+        <h2>Sajili Muuzaji Mpya</h2>
+        <hr class="rule" style="margin-left:0;">
+        <p class="sub">Msajili muuzaji anayetaka kuuza simu kwa majina matatu na namba yake rasmi. Mfumo utatengeneza tarakimu 6 za kuingia.</p>
+        <form id="registerForm" autocomplete="off">
+          <div class="field-grid">
+            <div class="field"><label>Jina la Kwanza *</label><input type="text" id="r_first" required></div>
+            <div class="field"><label>Jina la Kati</label><input type="text" id="r_middle"></div>
+            <div class="field"><label>Jina la Mwisho *</label><input type="text" id="r_last" required></div>
+            <div class="field"><label>Namba ya Simu Rasmi *</label><input type="tel" id="r_phone" required></div>
+          </div>
+          <p class="app-error" id="registerError"></p>
+          <div class="app-btn-row">
+            <button type="submit" class="btn" style="border:none;cursor:pointer;">Sajili &amp; Tengeneza Passkey</button>
+          </div>
+        </form>
+        <div class="passkey-display" id="passkeyDisplay">
+          <span style="font-size:12.5px;color:var(--muted);">Tarakimu 6 za muuzaji (mpe namba hii kwa simu/moja kwa moja)</span>
+          <div class="code" id="passkeyCode"></div>
+          <div class="passkey-actions"><button class="btn-sm passkey-copy" type="button" id="copyPasskeyBtn" onclick="copyPasskey()">Nakili passkey</button></div>
+        </div>
+      </div>
+
+      <div class="admin-toggle-row">
+        <button class="is-active" id="toggleApplicants" onclick="toggleAdminSection('applicants')">Orodha ya Waombaji</button>
+        <button id="togglePrinted" onclick="toggleAdminSection('printed')">Walioshamaliza (PDF)</button>
+      </div>
+
+      <div class="admin-section glass-panel is-active" id="applicantsSection">
+        <div class="admin-table-toolbar">
+          <div class="admin-search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg><input id="applicantsSearch" type="search" placeholder="Tafuta kwa jina, namba au passkey" oninput="filterAdminTable('applicants')"></div>
+          <button class="btn ghost btn-sm" type="button" onclick="exportAdminTable('applicants')">Pakua CSV</button>
+        </div>
+        <div class="admin-table-wrap"><table class="admin-table" id="applicantsTable">
+          <thead><tr><th onclick="sortAdminTable('applicants','applicationId')">ID ya Maombi <span class="sort-caret"></span></th><th onclick="sortAdminTable('applicants','fullName')">Jina <span class="sort-caret"></span></th><th onclick="sortAdminTable('applicants','phone')">Namba ya Simu <span class="sort-caret"></span></th><th onclick="sortAdminTable('applicants','passkey')">Passkey <span class="sort-caret"></span></th><th onclick="sortAdminTable('applicants','loginStatus')">Status <span class="sort-caret"></span></th><th>Majibu</th><th>Hatua</th></tr></thead>
+          <tbody id="applicantsTbody"></tbody>
+        </table></div>
+        <p class="empty-note" id="applicantsEmpty" data-default-message="Hakuna waombaji bado." style="display:none;">Hakuna waombaji bado.</p>
+      </div>
+
+      <div class="admin-section glass-panel" id="printedSection">
+        <div class="admin-table-toolbar">
+          <div class="admin-search"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg><input id="printedSearch" type="search" placeholder="Tafuta fomu iliyokamilika" oninput="filterAdminTable('printed')"></div>
+          <button class="btn ghost btn-sm" type="button" onclick="exportAdminTable('printed')">Pakua CSV</button>
+        </div>
+        <div class="admin-table-wrap"><table class="admin-table" id="printedTable">
+          <thead><tr><th onclick="sortAdminTable('printed','applicationId')">ID ya Maombi <span class="sort-caret"></span></th><th onclick="sortAdminTable('printed','fullname')">Jina <span class="sort-caret"></span></th><th onclick="sortAdminTable('printed','phone')">Namba ya Simu <span class="sort-caret"></span></th><th onclick="sortAdminTable('printed','completedAt')">Tarehe ya Kukamilisha <span class="sort-caret"></span></th></tr></thead>
+          <tbody id="printedTbody"></tbody>
+        </table></div>
+        <p class="empty-note" id="printedEmpty" data-default-message="Bado hakuna aliyekamilisha fomu." style="display:none;">Bado hakuna aliyekamilisha fomu.</p>
+        <div class="admin-danger-zone"><div><strong>Rekodi za majaribio</strong><p>Futa data yote iliyohifadhiwa kwenye kivinjari hiki pekee.</p></div><button class="btn ghost btn-sm btn-danger" type="button" onclick="clearAdminData()">Futa data yote</button></div>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script>
+  /* =====================================================
      SIMUPESA SUPABASE INTEGRATION (SCRIPT-ONLY)
      Replaces localStorage with Supabase while preserving
      every existing UI element, ID, class, and visual
