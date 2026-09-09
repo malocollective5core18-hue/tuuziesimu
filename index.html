@@ -922,6 +922,8 @@
   .modal-card h3 { font-size: 19px; }
   .modal-card p { font-size: 13.5px; color: var(--muted); margin-top: 10px; }
   .modal-card .app-btn-row { justify-content: center; }
+  .pdf-viewer-card { max-width: 900px; height: min(88vh, 760px); padding: 16px; display: flex; flex-direction: column; text-align: left; }
+  .pdf-viewer-frame { width: 100%; flex: 1; min-height: 420px; border: 1px solid var(--line); border-radius: 12px; background: #fff; }
   .submission-success-card { text-align: center; border-color: rgba(18,138,114,0.45); background: rgba(234,250,245,0.92); }
   .success-spinner {
     width: 42px; height: 42px; margin: 0 auto 14px;
@@ -1107,6 +1109,8 @@
   .response-pending { color: var(--muted); font-size: 12px; }
   .response-approved { color: var(--teal); font-weight: 600; font-size: 12px; }
   .response-rejected { color: #b3312f; font-weight: 600; font-size: 12px; }
+  .delete-application { border: 0; background: none; padding: 0; color: #b3312f; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
+  .delete-application:hover { text-decoration: underline; }
   .seller-response-card { display: none; margin: 0 0 20px; padding: 18px 20px; border-radius: 16px; border: 1px solid rgba(18,138,114,0.32); background: rgba(234,250,245,0.85); }
   .seller-response-card.is-active { display: block; }
   .seller-response-card.is-rejected { border-color: rgba(179,47,47,0.28); background: rgba(255,242,242,0.86); }
@@ -1332,7 +1336,7 @@
     <div class="footer-bottom">
       <span>© 2026 SimuPesa</span>
       <span>Tunanunua, tunalipa, kwa haraka.</span>
-      <a href="#admin" onclick="showView('adminLoginView');return false;" style="font-size:11px;">Admin</a>
+      <a href="#admin" onclick="openAdminPortal();return false;" style="font-size:11px;">Admin</a>
     </div>
   </footer>
 </div>
@@ -1788,9 +1792,18 @@
       <a href="tel:+255617757020">+255 617 757 020</a>
     </div>
     <div class="app-btn-row">
-      <a class="btn" id="waFallbackLink" href="https://wa.me/qr/QCXHWFGUIQ74D1" target="_blank" rel="noopener" style="text-decoration:none;">Fungua WhatsApp</a>
+      <button class="btn" type="button" style="border:none;cursor:pointer;" onclick="openSellerPdfViewer()">Tazama PDF</button>
       <button class="btn ghost" style="border:none;cursor:pointer;" onclick="closeSuccessModal()">Funga</button>
     </div>
+  </div>
+</div>
+
+<!-- ============ SELLER PDF VIEWER ============ -->
+<div id="sellerPdfModal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="sellerPdfTitle">
+  <div class="modal-card glass-panel pdf-viewer-card">
+    <h3 id="sellerPdfTitle">Fomu yako ya maombi</h3>
+    <iframe class="pdf-viewer-frame" id="sellerPdfFrame" title="PDF ya maombi ya muuzaji"></iframe>
+    <div class="app-btn-row"><button class="btn ghost" type="button" style="border:none;cursor:pointer;" onclick="closeSellerPdfViewer()">Funga</button></div>
   </div>
 </div>
 
@@ -1916,7 +1929,7 @@
           <button class="btn ghost btn-sm" type="button" onclick="exportAdminTable('applicants')">Pakua CSV</button>
         </div>
         <div class="admin-table-wrap"><table class="admin-table" id="applicantsTable">
-          <thead><tr><th onclick="sortAdminTable('applicants','applicationId')">ID ya Maombi <span class="sort-caret"></span></th><th onclick="sortAdminTable('applicants','fullName')">Jina <span class="sort-caret"></span></th><th onclick="sortAdminTable('applicants','phone')">Namba ya Simu <span class="sort-caret"></span></th><th onclick="sortAdminTable('applicants','passkey')">Passkey <span class="sort-caret"></span></th><th onclick="sortAdminTable('applicants','loginStatus')">Status <span class="sort-caret"></span></th><th>Majibu</th></tr></thead>
+          <thead><tr><th onclick="sortAdminTable('applicants','applicationId')">ID ya Maombi <span class="sort-caret"></span></th><th onclick="sortAdminTable('applicants','fullName')">Jina <span class="sort-caret"></span></th><th onclick="sortAdminTable('applicants','phone')">Namba ya Simu <span class="sort-caret"></span></th><th onclick="sortAdminTable('applicants','passkey')">Passkey <span class="sort-caret"></span></th><th onclick="sortAdminTable('applicants','loginStatus')">Status <span class="sort-caret"></span></th><th>Majibu</th><th>Hatua</th></tr></thead>
           <tbody id="applicantsTbody"></tbody>
         </table></div>
         <p class="empty-note" id="applicantsEmpty" data-default-message="Hakuna waombaji bado." style="display:none;">Hakuna waombaji bado.</p>
@@ -2369,6 +2382,8 @@
   }
 
   /* ===================== FINALIZE (Dhibitisha) ===================== */
+  var sellerPdfUrl = null;
+
   function finalizeSubmission(){
     var confirmBtn = document.getElementById('confirmSubmitBtn');
     var confirmErr = document.getElementById('confirmError');
@@ -2379,10 +2394,8 @@
       var data = collectFormData();
       var photos = { front: frontPhotoData, back: backPhotoData, supporting: supportingPhotoData };
       var doc = generatePDF(data, photos);
-      var safeName = (data.a.fullname || 'muuzaji').trim().replace(/\s+/g, '_');
-      var fileName = 'SimuPesa-' + data.applicationId + '-' + safeName + '.pdf';
-
-      doc.save(fileName);
+      if (sellerPdfUrl) URL.revokeObjectURL(sellerPdfUrl);
+      sellerPdfUrl = URL.createObjectURL(doc.output('blob'));
 
       var completed = loadCompleted();
       completed.push({
@@ -2396,7 +2409,6 @@
       saveCompleted(completed);
 
       document.getElementById('confirmModal').classList.remove('is-active');
-      tryNativeShare(doc, fileName);
       document.getElementById('successModal').classList.add('is-active');
     } catch (err) {
       confirmErr.textContent = 'Kuna hitilafu katika kutengeneza PDF. Jaribu tena.';
@@ -2407,19 +2419,13 @@
     }
   }
 
-  function tryNativeShare(doc, fileName){
-    try {
-      var pdfBlob = doc.output('blob');
-      var pdfFile = new File([pdfBlob], fileName, { type: 'application/pdf' });
-      if (navigator.canShare && navigator.canShare({ files: [pdfFile] })) {
-        navigator.share({
-          files: [pdfFile],
-          title: 'Fomu ya Kuuza Simu - SimuPesa',
-          text: 'Fomu ya kuuza simu (SimuPesa). Tuma kwa: +255 718 122 255 / +255 617 757 020'
-        }).catch(function (err) { console.log('share cancelled or failed', err); });
-      }
-    } catch (e) { console.log('share not supported on this device', e); }
+  function openSellerPdfViewer(){
+    if (!sellerPdfUrl) return;
+    document.getElementById('sellerPdfFrame').src = sellerPdfUrl;
+    document.getElementById('sellerPdfModal').classList.add('is-active');
   }
+
+  function closeSellerPdfViewer(){ document.getElementById('sellerPdfModal').classList.remove('is-active'); }
 
   function closeSuccessModal(){
     document.getElementById('successModal').classList.remove('is-active');
@@ -2433,6 +2439,8 @@
     document.getElementById('photoBackPreview').src = '';
     document.getElementById('photoSupportingSlot').classList.remove('has-photo');
     document.getElementById('photoSupportingPreview').src = '';
+    closeSellerPdfViewer();
+    if (sellerPdfUrl) { URL.revokeObjectURL(sellerPdfUrl); sellerPdfUrl = null; }
     showView('siteView');
   }
 
@@ -2442,6 +2450,24 @@
     var result = await supabaseClient.from('admin_profiles').select('id').eq('id', userId).maybeSingle();
     if (result.error) throw result.error;
     return Boolean(result.data);
+  }
+
+  async function openAdminPortal(){
+    if (!supabaseClient) { showView('adminLoginView'); return; }
+    try {
+      var sessionResult = await supabaseClient.auth.getSession();
+      var user = sessionResult.data.session && sessionResult.data.session.user;
+      if (user && await isSimuPesaAdmin(user.id)) {
+        window.location.hash = 'admin';
+        showView('adminDashboardView');
+      } else {
+        window.location.hash = 'admin';
+        showView('adminLoginView');
+      }
+    } catch (error) {
+      console.warn('Admin portal check failed:', error);
+      showView('adminLoginView');
+    }
   }
 
   document.getElementById('adminLoginForm').addEventListener('submit', async function (e) {
@@ -2468,6 +2494,7 @@
       }
       errEl.textContent = '';
       document.getElementById('adminLoginForm').reset();
+      window.location.hash = 'admin';
       showView('adminDashboardView');
     } catch (error) {
       console.error('Admin sign-in error:', error);
@@ -2480,6 +2507,7 @@
 
   async function adminLogout(){
     if (supabaseClient) await supabaseClient.auth.signOut();
+    history.replaceState(null, '', window.location.pathname + window.location.search);
     showView('siteView');
   }
 
@@ -2659,7 +2687,7 @@
             ? '<button class="response-button response-approved" type="button" onclick="openAdminResponse(\'' + escapeHtml(applicationId) + '\')">Imekubaliwa</button>'
             : '<button class="response-button response-rejected" type="button" onclick="openAdminResponse(\'' + escapeHtml(applicationId) + '\')">Imekataliwa</button>');
         tr.innerHTML = '<td><span class="application-id">' + escapeHtml(applicationId) + '</span></td><td><button class="table-link" type="button" onclick="showApplicationDetails(\'' + escapeHtml(applicationId) + '\')">' + escapeHtml(a.fullName) + '</button></td><td>' + escapeHtml(a.phone) +
-          '</td><td>' + escapeHtml(a.passkey) + '</td><td>' + statusHtml + '</td><td>' + responseHtml + '</td>';
+          '</td><td>' + escapeHtml(a.passkey) + '</td><td>' + statusHtml + '</td><td>' + responseHtml + '</td><td><button class="delete-application" type="button" onclick="deleteSellerApplication(\'' + escapeHtml(applicationId) + '\')">Futa</button></td>';
         tbody.appendChild(tr);
       });
     }
@@ -2827,6 +2855,15 @@
     localStorage.removeItem(DB_KEY_COMPLETED);
     document.getElementById('applicantsSearch').value = '';
     document.getElementById('printedSearch').value = '';
+    renderAdminTables();
+  }
+
+  function deleteSellerApplication(applicationId){
+    var applicant = loadApplicants().find(function(item){ return item.applicationId === applicationId; });
+    if (!applicant) return;
+    if (!window.confirm('Unataka kufuta maombi ya ' + applicant.fullName + ' (' + applicationId + ')? Hatua hii haiwezi kurejeshwa.')) return;
+    saveApplicants(loadApplicants().filter(function(item){ return item.applicationId !== applicationId; }));
+    saveCompleted(loadCompleted().filter(function(item){ return item.applicationId !== applicationId; }));
     renderAdminTables();
   }
 
