@@ -1953,35 +1953,21 @@
 </div>
 
 <script>
-/* Shared backend configuration. Replace with your own project's
-     URL/anon key if these ever change. The anon key is safe to expose
-     only because RLS policies + RPCs (see migration SQL) gate every
-     write. */
-  const SUPABASE_URL = 'https://zzgnrqmaymlaaumjlxzl.supabase.co';
-  const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp6Z25ycW1heW1sYWF1bWpseHpsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg5NDY4MTcsImV4cCI6MjEwNDUyMjgxN30.fIQKlZ3uMbtBvnBoWQzeCdjOjiPGVz3ndLACOUefbs4';
-  const PHOTO_BUCKET = 'phone-photos';
-
-  const supabaseClient = window.supabase && window.supabase.createClient
-    ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
-        auth: { persistSession: true, autoRefreshToken: true }
-      })
-    : null;
-
-  function hasSupabaseConnection() {
-    return Boolean(supabaseClient);
-  }
-
-  if (!supabaseClient) {
-    console.warn('Supabase library did not load. SimuPesa cannot read or write data until it is available.');
-  }
-
-  /* =====================================================
-     SIMUPESA APP LOGIC — Supabase-backed (multi-device)
-     No record data is read from or written to localStorage.
-     localStorage/sessionStorage may still hold short-lived UI
-     state only (none currently used).
+/* =====================================================
+     SIMUPESA APP LOGIC — Supabase-backed data layer
+     Reads/writes go through:
+       - public.sellers / public.applications /
+         public.application_photos / public.application_responses
+       - RPCs: verify_seller_login (existing), plus
+         register_seller_application, submit_seller_application,
+         get_seller_status (additive — see simupesa-additions.sql)
+     Cloudinary (config from the earlier <script> block) is used for
+     photo storage; only the resulting secure_url is written to the
+     database. supabaseClient / hasSupabaseConnection / CLOUDINARY_*
+     come from the SUPABASE CONFIG script above and are reused as-is.
      ===================================================== */
 
+  /* ===================== SMALL UTILITIES ===================== */
   function normalizePhone(p){ return (p || '').replace(/[^0-9]/g, ''); }
 
   function escapeHtml(str){
@@ -1990,15 +1976,22 @@
     return div.innerHTML;
   }
 
-  function fmtDate(value){
+  function formatDateTime(value){
     if (!value) return '-';
     try { return new Date(value).toLocaleString('sw-TZ'); }
     catch (e) { return String(value); }
   }
 
-  function fmtMoney(value){
-    if (value === null || value === undefined || value === '') return '-';
-    return 'TZS ' + Number(value).toLocaleString('en-US');
+  function formatMoneyTZS(value){
+    if (value === null || value === undefined || value === '') return '';
+    var n = Number(value);
+    if (isNaN(n)) return String(value);
+    return 'TZS ' + n.toLocaleString('en-US');
+  }
+
+  function unwrapOne(x){
+    if (Array.isArray(x)) return x.length ? x[0] : null;
+    return x || null;
   }
 
   /* ===================== VIEW ROUTING ===================== */
@@ -2007,120 +2000,95 @@
     var el = document.getElementById(id);
     if (el) el.classList.add('is-active');
     window.scrollTo(0, 0);
-    if (id === 'adminDashboardView') { renderAdminTables(); }
+    if (id === 'adminDashboardView') { renderAdminTables(true); }
   }
 
-  var currentApplicant = null; // { seller_id, application_id, full_name }
+  var currentApplicant = null;
 
-  /* ===================== DATA ACCESS LAYER ===================== */
-
-  async function fetchSellerOverview(){
-    if (!supabaseClient) return [];
-    var result = await supabaseClient
-      .from('admin_seller_overview')
-      .select('*')
-      .order('registered_at', { ascending: false });
-    if (result.error) { console.error('fetchSellerOverview', result.error); return []; }
-    return result.data || [];
-  }
-
-  async function fetchFullApplication(applicationId){
-    if (!supabaseClient || !applicationId) return null;
-    var result = await supabaseClient
-      .from('sellers')
-      .select('*, applications(*, application_photos(*), application_responses(*))')
-      .eq('application_id', applicationId)
-      .maybeSingle();
-    if (result.error) { console.error('fetchFullApplication', result.error); return null; }
-    return result.data;
-  }
-
-  async function signedPhotoUrl(path){
-    if (!path || !supabaseClient) return null;
-    var result = await supabaseClient.storage.from(PHOTO_BUCKET).createSignedUrl(path, 3600);
-    if (result.error) { console.warn('signedPhotoUrl failed for ' + path, result.error); return null; }
-    return result.data.signedUrl;
-  }
-
-  async function urlToDataUrl(url){
-    if (!url) return null;
-    try {
-      var res = await fetch(url);
-      var blob = await res.blob();
-      return await new Promise(function (resolve, reject) {
-        var reader = new FileReader();
-        reader.onload = function () { resolve(reader.result); };
-        reader.onerror = reject;
-        reader.readAsDataURL(blob);
-      });
-    } catch (e) {
-      console.warn('urlToDataUrl failed', e);
-      return null;
-    }
-  }
-
-  var adminOverviewCache = [];
-
-  /* ===================== GATE (seller passkey entry) ===================== */
+  /* ===================== GATE (passkey entry) ===================== */
   var gateForm = document.getElementById('gateForm');
   gateForm.addEventListener('submit', async function (e) {
     e.preventDefault();
-    var phone = normalizePhone(document.getElementById('gatePhone').value);
+    var phoneRaw = document.getElementById('gatePhone').value;
     var code = document.getElementById('gateCode').value.trim();
     var errEl = document.getElementById('gateError');
+    var submitBtn = gateForm.querySelector('button[type="submit"]');
     errEl.textContent = '';
 
     if (!hasSupabaseConnection()) {
-      errEl.textContent = 'Muunganisho wa database haujapatikana. Angalia intaneti yako.';
+      errEl.textContent = 'Muunganisho wa mtandao haupo kwa sasa. Jaribu tena baadaye.';
       return;
     }
 
-    var submitBtn = gateForm.querySelector('button[type="submit"]');
-    if (submitBtn) submitBtn.disabled = true;
-
+    if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Inaangalia...'; }
     try {
-      /* Sellers never get a real Supabase Auth account. Instead we sign
-         them into a lightweight ANONYMOUS auth session first, then the
-         seller_login RPC links that anon auth.uid() to their seller
-         row. Every later insert (application, photos) is scoped by RLS
-         to "the anon session tied to this seller_id" — so we are never
-         trusting a bare client-supplied seller_id for writes. Logging
-         in again (same or another device) simply re-points the link,
-         so only the most recent login can submit for that seller. */
-      var sessionResult = await supabaseClient.auth.getSession();
-      if (!sessionResult.data.session) {
-        var anonResult = await supabaseClient.auth.signInAnonymously();
-        if (anonResult.error) throw anonResult.error;
-      }
+      var loginResult = await supabaseClient.rpc('verify_seller_login', {
+        p_phone: phoneRaw,
+        p_passkey: code
+      });
+      if (loginResult.error) throw loginResult.error;
+      var row = loginResult.data && loginResult.data[0];
+      if (!row) throw new Error('SELLER_NOT_FOUND');
 
-      var rpcResult = await supabaseClient.rpc('seller_login', { p_phone: phone, p_passkey: code });
-      if (rpcResult.error) throw rpcResult.error;
-      var match = Array.isArray(rpcResult.data) ? rpcResult.data[0] : rpcResult.data;
-      if (!match) throw new Error('SELLER_NOT_FOUND');
+      var status = await fetchSellerStatus(row.seller_id);
 
-      currentApplicant = match;
+      currentApplicant = {
+        sellerId: row.seller_id,
+        applicationId: row.application_id,
+        fullName: row.full_name,
+        phone: phoneRaw,
+        passkey: code,
+        hasSubmitted: status.hasSubmitted,
+        response: status.response
+      };
 
-      document.getElementById('formTopbarName').textContent = 'Fomu ya ' + match.full_name;
-      document.getElementById('sellerApplicationId').textContent = match.application_id;
-      document.getElementById('a_fullname').value = match.full_name;
-      document.getElementById('a_phone').value = phone;
-      await renderSellerResponse(match.application_id);
+      document.getElementById('formTopbarName').textContent = 'Fomu ya ' + row.full_name;
+      document.getElementById('sellerApplicationId').textContent = row.application_id;
+      document.getElementById('a_fullname').value = row.full_name;
+      document.getElementById('a_phone').value = phoneRaw;
+      renderSellerResponse(currentApplicant);
+      applySellerSubmissionLock(currentApplicant.hasSubmitted);
 
       showView('formView');
-    } catch (err) {
-      console.error('seller login error', err);
-      var msg = (err && err.message) || '';
+    } catch (error) {
+      console.error('Seller login error:', error);
+      var msg = (error && error.message) || '';
       if (msg.indexOf('SELLER_NOT_FOUND') !== -1) {
         errEl.textContent = 'Namba hii haijasajiliwa. Wasiliana na admin kwanza kupata usajili.';
       } else if (msg.indexOf('INVALID_PASSKEY') !== -1) {
         errEl.textContent = 'Tarakimu 6 si sahihi. Jaribu tena au wasiliana na admin.';
       } else {
-        errEl.textContent = 'Imeshindikana kuingia. Angalia intaneti yako na jaribu tena.';
+        errEl.textContent = 'Imeshindikana kuingia. Angalia mtandao wako kisha jaribu tena.';
       }
     } finally {
-      if (submitBtn) submitBtn.disabled = false;
+      if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Ingia'; }
     }
   });
+
+  async function fetchSellerStatus(sellerId){
+    var result = await supabaseClient.rpc('get_seller_status', { p_seller_id: sellerId });
+    if (result.error) throw result.error;
+    var row = result.data && result.data[0];
+    if (!row) return { hasSubmitted: false, response: null };
+    return {
+      hasSubmitted: Boolean(row.has_submitted),
+      response: row.response_status
+        ? { status: row.response_status, reason: row.response_reason, agreedPrice: row.agreed_price }
+        : null
+    };
+  }
+
+  function applySellerSubmissionLock(hasSubmitted){
+    var formError = document.getElementById('formError');
+    var submitBtn = document.querySelector('#sellForm .form-submit-bar button[type="submit"]');
+    if (hasSubmitted) {
+      if (submitBtn) submitBtn.disabled = true;
+      if (formError) formError.textContent = 'Umeshatuma fomu hii mara moja. Kama unataka kubadilisha taarifa, wasiliana na admin.';
+    } else {
+      if (submitBtn) submitBtn.disabled = false;
+      if (formError) formError.textContent = '';
+    }
+  }
 
   function confirmLeaveForm(){
     if (window.confirm('Una uhakika unataka kutoka? Taarifa ulizojaza hazitahifadhiwa.')) {
@@ -2128,19 +2096,17 @@
     }
   }
 
-  async function renderSellerResponse(applicationId){
+  function renderSellerResponse(applicant){
     var card = document.getElementById('sellerResponseCard');
+    var response = applicant && applicant.response;
     card.classList.remove('is-active', 'is-rejected');
-    var full = await fetchFullApplication(applicationId);
-    var app = full && full.applications;
-    var response = app && app.application_responses;
     if (!response) return;
     var title = document.getElementById('sellerResponseTitle');
     var message = document.getElementById('sellerResponseMessage');
     if (response.status === 'approved') {
       title.textContent = 'Maombi yako yamekubaliwa';
       message.textContent = (response.reason ? response.reason + '. ' : '') +
-        (response.agreed_price != null ? 'Bei iliyokubaliwa ni ' + fmtMoney(response.agreed_price) + '.' : '');
+        (response.agreedPrice ? 'Bei iliyokubaliwa ni ' + formatMoneyTZS(response.agreedPrice) + '.' : '');
     } else {
       title.textContent = 'Majibu ya maombi yako';
       message.textContent = response.reason || 'Maombi yako hayajakubaliwa kwa sasa.';
@@ -2149,7 +2115,10 @@
     card.classList.add('is-active');
   }
 
-  /* ===================== PHOTO UPLOAD (normalize to JPEG via canvas) ===================== */
+  /* ===================== PHOTO CAPTURE (normalize to JPEG via canvas) =====================
+     Photos stay as local data URLs in the browser until the seller
+     confirms submission — only then are they uploaded to Cloudinary
+     and only the resulting URL reaches the database. */
   var frontPhotoData = null;
   var backPhotoData = null;
   var supportingPhotoData = null;
@@ -2219,6 +2188,38 @@
   setupPhotoSlot('photoSupportingGallery', 'photoSupportingSlot', 'photoSupportingPreview', function (dataUrl) { supportingPhotoData = dataUrl; keepPhotoFormPosition(); });
   setupPhotoSlot('photoSupportingCamera', 'photoSupportingSlot', 'photoSupportingPreview', function (dataUrl) { supportingPhotoData = dataUrl; keepPhotoFormPosition(); });
 
+  /* ===================== CLOUDINARY UPLOAD ===================== */
+  function dataUrlToBlob(dataUrl){
+    var parts = dataUrl.split(',');
+    var meta = parts[0].match(/:(.*?);/);
+    var mime = meta ? meta[1] : 'image/jpeg';
+    var binary = atob(parts[1]);
+    var bytes = new Uint8Array(binary.length);
+    for (var i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+    return new Blob([bytes], { type: mime });
+  }
+
+  async function uploadPhotoToCloudinary(dataUrl, publicIdHint){
+    if (!dataUrl) throw new Error('NO_IMAGE_DATA');
+    if (!CLOUDINARY_CLOUD_NAME || !CLOUDINARY_UPLOAD_PRESET) throw new Error('CLOUDINARY_NOT_CONFIGURED');
+    var blob = dataUrlToBlob(dataUrl);
+    var form = new FormData();
+    form.append('file', blob, (publicIdHint || 'simupesa-photo') + '.jpg');
+    form.append('upload_preset', CLOUDINARY_UPLOAD_PRESET);
+    if (CLOUDINARY_SIMUPESA_FOLDER) form.append('folder', CLOUDINARY_SIMUPESA_FOLDER);
+    var response = await fetch('https://api.cloudinary.com/v1_1/' + CLOUDINARY_CLOUD_NAME + '/image/upload', {
+      method: 'POST',
+      body: form
+    });
+    var json = null;
+    try { json = await response.json(); } catch (parseErr) { json = null; }
+    if (!response.ok || !json || !json.secure_url) {
+      var msg = json && json.error && json.error.message ? json.error.message : 'CLOUDINARY_UPLOAD_FAILED';
+      throw new Error(msg);
+    }
+    return json.secure_url;
+  }
+
   /* ===================== FORM COLLECTION ===================== */
   function getVal(id){ var el = document.getElementById(id); return el ? el.value : ''; }
   function getChecked(id){ var el = document.getElementById(id); return el ? el.checked : false; }
@@ -2227,34 +2228,106 @@
     return el ? el.value : '';
   }
 
-  /* Flat payload matching the `applications` table column names 1:1,
-     so the exact same shape can be fed straight into the shared PDF
-     generator whether it comes from this form or from a DB read. */
-  function collectFormPayload(){
+  function collectFormData(){
     return {
-      seller_id: currentApplicant ? currentApplicant.seller_id : null,
-      a_full_name: getVal('a_fullname'), a_phone: getVal('a_phone'), a_nida: getVal('a_nida'),
-      a_location: getVal('a_location'), a_sale_date: getVal('a_saledate') || null, a_reason: getVal('a_reason') || null,
-      b_brand: getVal('b_brand'), b_model: getVal('b_model'), b_model_number: getVal('b_modelnum') || null,
-      b_imei1: getVal('b_imei1') || null, b_imei2: getVal('b_imei2') || null, b_serial: getVal('b_serial') || null,
-      b_storage: getVal('b_storage'), b_network: getRadio('b_network'), b_dual_sim: getRadio('b_dualsim') || null,
-      c_screen: getRadio('c_screen') || null, c_touch: getRadio('c_touch') || null, c_frame: getRadio('c_frame') || null,
-      c_backcover: getRadio('c_backcover') || null, c_camera_glass: getRadio('c_camglass') || null, c_camera_lens: getRadio('c_camlens') || null,
-      c_buttons: getRadio('c_buttons') || null, c_charging_port: getRadio('c_chargeport') || null, c_sim_tray: getRadio('c_simtray') || null,
-      c_speaker: getRadio('c_speaker') || null, c_microphone: getRadio('c_mic') || null,
-      d_battery_health: Number(getVal('d_health')) || 0, d_replaced: getRadio('d_replaced') || null,
-      d_charges_ok: getRadio('d_chargesok') || null, d_overheats: getRadio('d_overheats') || null, d_drains_fast: getRadio('d_drainsfast') || null,
-      f_front: getRadio('f_front') || null, f_main: getRadio('f_main') || null, f_ultrawide: getRadio('f_ultrawide') || null,
-      f_telephoto: getRadio('f_telephoto') || null, f_flash: getRadio('f_flash') || null, f_video: getRadio('f_video') || null, f_focus: getRadio('f_focus') || null,
-      g_powers_on: getRadio('g_powers') || null, g_fingerprint: getRadio('g_fingerprint') || null, g_face_id: getRadio('g_faceid') || null,
-      g_wifi: getRadio('g_wifi') || null, g_bluetooth: getRadio('g_bt') || null, g_gps: getRadio('g_gps') || null,
-      g_mobile_network: getRadio('g_network') || null, g_calls: getRadio('g_calls') || null, g_sms: getRadio('g_sms') || null, g_internet: getRadio('g_internet') || null,
-      h_opened: getRadio('h_opened') || null, h_repaired: getRadio('h_repaired') || null, h_screen_changed: getRadio('h_screenchanged') || null,
-      h_battery_changed: getRadio('h_batterychanged') || null, h_dropped_hard: getRadio('h_dropped') || null, h_water_damage: getRadio('h_water') || null,
-      h_spare_parts: getVal('h_spareparts') || null,
-      i_has_receipt: getChecked('i_receipt'), i_has_warranty: getChecked('i_warranty'), i_has_invoice: getChecked('i_invoice'), i_other: getVal('i_other') || null,
-      k_asking_price: Number(getVal('k_askingprice')) || 0,
-      conf_signature: getVal('conf_signature'), conf_date: getVal('conf_date') || null
+      applicationId: currentApplicant ? currentApplicant.applicationId : '',
+      a: {
+        fullname: getVal('a_fullname'), phone: getVal('a_phone'), nida: getVal('a_nida'),
+        location: getVal('a_location'), saledate: getVal('a_saledate'), reason: getVal('a_reason')
+      },
+      b: {
+        brand: getVal('b_brand'), model: getVal('b_model'), modelnum: getVal('b_modelnum'),
+        imei1: getVal('b_imei1'), imei2: getVal('b_imei2'), serial: getVal('b_serial'),
+        storage: getVal('b_storage'), network: getRadio('b_network'), dualsim: getRadio('b_dualsim')
+      },
+      c: {
+        screen: getRadio('c_screen'), touch: getRadio('c_touch'), frame: getRadio('c_frame'),
+        backcover: getRadio('c_backcover'), camglass: getRadio('c_camglass'), camlens: getRadio('c_camlens'),
+        buttons: getRadio('c_buttons'), chargeport: getRadio('c_chargeport'), simtray: getRadio('c_simtray'),
+        speaker: getRadio('c_speaker'), mic: getRadio('c_mic')
+      },
+      d: {
+        health: getVal('d_health'), replaced: getRadio('d_replaced'), chargesok: getRadio('d_chargesok'),
+        overheats: getRadio('d_overheats'), drainsfast: getRadio('d_drainsfast')
+      },
+      f: {
+        front: getRadio('f_front'), main: getRadio('f_main'), ultrawide: getRadio('f_ultrawide'),
+        telephoto: getRadio('f_telephoto'), flash: getRadio('f_flash'), video: getRadio('f_video'), focus: getRadio('f_focus')
+      },
+      g: {
+        powers: getRadio('g_powers'), fingerprint: getRadio('g_fingerprint'), faceid: getRadio('g_faceid'),
+        wifi: getRadio('g_wifi'), bt: getRadio('g_bt'), gps: getRadio('g_gps'), network: getRadio('g_network'),
+        calls: getRadio('g_calls'), sms: getRadio('g_sms'), internet: getRadio('g_internet')
+      },
+      h: {
+        opened: getRadio('h_opened'), repaired: getRadio('h_repaired'), screenchanged: getRadio('h_screenchanged'),
+        batterychanged: getRadio('h_batterychanged'), dropped: getRadio('h_dropped'), water: getRadio('h_water'),
+        spareparts: getVal('h_spareparts')
+      },
+      i: {
+        receipt: getChecked('i_receipt'), warranty: getChecked('i_warranty'),
+        invoice: getChecked('i_invoice'), other: getVal('i_other')
+      },
+      k: { asking: getVal('k_askingprice') },
+      conf: { signature: getVal('conf_signature'), date: getVal('conf_date') }
+    };
+  }
+
+  /* Converts the form-shape object above into the DB column names
+     submit_seller_application expects in its jsonb parameter. */
+  function buildApplicationPayload(d){
+    return {
+      a_full_name: d.a.fullname, a_phone: d.a.phone, a_nida: d.a.nida, a_location: d.a.location,
+      a_sale_date: d.a.saledate || null, a_reason: d.a.reason || null,
+
+      b_brand: d.b.brand, b_model: d.b.model, b_model_number: d.b.modelnum || null,
+      b_imei1: d.b.imei1 || null, b_imei2: d.b.imei2 || null, b_serial: d.b.serial || null,
+      b_storage: d.b.storage, b_network: d.b.network, b_dual_sim: d.b.dualsim || null,
+
+      c_screen: d.c.screen || null, c_touch: d.c.touch || null, c_frame: d.c.frame || null,
+      c_backcover: d.c.backcover || null, c_camera_glass: d.c.camglass || null, c_camera_lens: d.c.camlens || null,
+      c_buttons: d.c.buttons || null, c_charging_port: d.c.chargeport || null, c_sim_tray: d.c.simtray || null,
+      c_speaker: d.c.speaker || null, c_microphone: d.c.mic || null,
+
+      d_battery_health: d.d.health === '' ? null : Number(d.d.health),
+      d_replaced: d.d.replaced || null, d_charges_ok: d.d.chargesok || null,
+      d_overheats: d.d.overheats || null, d_drains_fast: d.d.drainsfast || null,
+
+      f_front: d.f.front || null, f_main: d.f.main || null, f_ultrawide: d.f.ultrawide || null,
+      f_telephoto: d.f.telephoto || null, f_flash: d.f.flash || null, f_video: d.f.video || null, f_focus: d.f.focus || null,
+
+      g_powers_on: d.g.powers || null, g_fingerprint: d.g.fingerprint || null, g_face_id: d.g.faceid || null,
+      g_wifi: d.g.wifi || null, g_bluetooth: d.g.bt || null, g_gps: d.g.gps || null, g_mobile_network: d.g.network || null,
+      g_calls: d.g.calls || null, g_sms: d.g.sms || null, g_internet: d.g.internet || null,
+
+      h_opened: d.h.opened || null, h_repaired: d.h.repaired || null, h_screen_changed: d.h.screenchanged || null,
+      h_battery_changed: d.h.batterychanged || null, h_dropped_hard: d.h.dropped || null, h_water_damage: d.h.water || null,
+      h_spare_parts: d.h.spareparts || null,
+
+      i_has_receipt: Boolean(d.i.receipt), i_has_warranty: Boolean(d.i.warranty),
+      i_has_invoice: Boolean(d.i.invoice), i_other: d.i.other || null,
+
+      k_asking_price: d.k.asking === '' ? 0 : Number(d.k.asking),
+
+      conf_signature: d.conf.signature, conf_date: d.conf.date || null
+    };
+  }
+
+  /* Converts a DB applications row (snake_case columns) back into the
+     same a/b/c/d/f/g/h/i/k/conf shape used above, so the PDF and the
+     admin detail view can reuse one rendering path either way. */
+  function mapDbApplicationToFormShape(app){
+    return {
+      a: { fullname: app.a_full_name, phone: app.a_phone, nida: app.a_nida, location: app.a_location, saledate: app.a_sale_date, reason: app.a_reason },
+      b: { brand: app.b_brand, model: app.b_model, modelnum: app.b_model_number, imei1: app.b_imei1, imei2: app.b_imei2, serial: app.b_serial, storage: app.b_storage, network: app.b_network, dualsim: app.b_dual_sim },
+      c: { screen: app.c_screen, touch: app.c_touch, frame: app.c_frame, backcover: app.c_backcover, camglass: app.c_camera_glass, camlens: app.c_camera_lens, buttons: app.c_buttons, chargeport: app.c_charging_port, simtray: app.c_sim_tray, speaker: app.c_speaker, mic: app.c_microphone },
+      d: { health: app.d_battery_health, replaced: app.d_replaced, chargesok: app.d_charges_ok, overheats: app.d_overheats, drainsfast: app.d_drains_fast },
+      f: { front: app.f_front, main: app.f_main, ultrawide: app.f_ultrawide, telephoto: app.f_telephoto, flash: app.f_flash, video: app.f_video, focus: app.f_focus },
+      g: { powers: app.g_powers_on, fingerprint: app.g_fingerprint, faceid: app.g_face_id, wifi: app.g_wifi, bt: app.g_bluetooth, gps: app.g_gps, network: app.g_mobile_network, calls: app.g_calls, sms: app.g_sms, internet: app.g_internet },
+      h: { opened: app.h_opened, repaired: app.h_repaired, screenchanged: app.h_screen_changed, batterychanged: app.h_battery_changed, dropped: app.h_dropped_hard, water: app.h_water_damage, spareparts: app.h_spare_parts },
+      i: { receipt: app.i_has_receipt, warranty: app.i_has_warranty, invoice: app.i_has_invoice, other: app.i_other },
+      k: { asking: app.k_asking_price },
+      conf: { signature: app.conf_signature, date: app.conf_date }
     };
   }
 
@@ -2276,378 +2349,344 @@
     document.getElementById('confirmModal').classList.remove('is-active');
   }
 
-  /* =====================================================================
-     PDF GENERATION — one shared generator for seller/inspector/admin
-     copies, using jspdf-autotable for aligned field tables and
-     automatic pagination. Requires the jspdf-autotable CDN script to
-     be loaded alongside jsPDF (see note above the file listing).
-     ===================================================================== */
+  /* ===================== PDF GENERATION (single shared generator) =====================
+     generateApplicationPDF(app, { audience: 'seller' | 'inspector' | 'admin' })
+     app: { applicationId, fullName, phone, submittedAt, data (a/b/c/d/f/g/h/i/k/conf
+           shape), photos: {front, back, supporting} (Cloudinary URLs), response }
+     Returns a Promise<jsPDF doc>. Photos are fetched and embedded as part of
+     this call, so it is async; a failed/missing photo never aborts the PDF —
+     it is replaced with a placeholder note. */
+  function imgFormatFromDataUrl(url){
+    return url && url.indexOf('image/png') !== -1 ? 'PNG' : 'JPEG';
+  }
 
-  var PDF_GOLD = [179, 130, 47];
-  var PDF_TEAL = [18, 138, 114];
-  var PDF_TEXT = [28, 33, 48];
-  var PDF_PANEL = [242, 239, 232];
-  var PDF_LINE = [227, 221, 208];
-
-  function pdfImageFormat(dataUrl){
-    return /^data:image\/png/i.test(dataUrl || '') ? 'PNG' : 'JPEG';
+  async function loadImageAsDataUrl(url){
+    if (!url) return null;
+    try {
+      var res = await fetch(url, { mode: 'cors' });
+      if (!res.ok) throw new Error('HTTP_' + res.status);
+      var blob = await res.blob();
+      return await new Promise(function (resolve, reject) {
+        var reader = new FileReader();
+        reader.onload = function () { resolve(reader.result); };
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+    } catch (e) {
+      console.warn('Could not load photo for PDF:', url, e);
+      return null;
+    }
   }
 
   function getImageNaturalSize(dataUrl){
     return new Promise(function (resolve) {
-      if (!dataUrl) { resolve(null); return; }
       var img = new Image();
-      img.onload = function () { resolve({ w: img.naturalWidth || 1, h: img.naturalHeight || 1 }); };
+      img.onload = function () { resolve({ w: img.naturalWidth, h: img.naturalHeight }); };
       img.onerror = function () { resolve(null); };
       img.src = dataUrl;
     });
   }
 
-  /**
-   * Build one branded, paginated PDF for an application.
-   * @param {Object} row - flat application record (same column names as
-   *        the `applications` table — see collectFormPayload()).
-   * @param {string} humanId - the seller-facing application_id (e.g. SP-2026-483920).
-   * @param {Object} photos - { front, back, supporting } as data URLs (not remote URLs).
-   * @param {Object|null} response - application_responses row, or null if undecided.
-   * @param {Object} options - { audience: 'seller' | 'inspector' | 'admin' }
-   */
-  async function buildApplicationPdf(row, humanId, photos, response, options){
+  function pdfFilename(applicationId, audience){
+    var suffix = audience === 'admin' ? '-Admin' : (audience === 'inspector' ? '-Mkaguzi' : '');
+    return 'SimuPesa-' + (applicationId || 'Maombi') + suffix + '.pdf';
+  }
+
+  async function generateApplicationPDF(app, options){
     options = options || {};
     var audience = options.audience || 'admin';
-    photos = photos || {};
-
+    var d = app.data || {};
     var doc = new jspdf.jsPDF({ unit: 'mm', format: 'a4' });
-    var pageW = doc.internal.pageSize.getWidth();
-    var pageH = doc.internal.pageSize.getHeight();
-    var margin = { left: 12, right: 12, top: 24, bottom: 16 };
-    var generatedAt = new Date().toLocaleString('sw-TZ');
-    var y = margin.top;
+    var pageWidth = doc.internal.pageSize.getWidth();
+    var pageHeight = doc.internal.pageSize.getHeight();
+    var margin = 16;
+    var valueX = margin + 48;
+    var y = margin;
 
     function drawHeader(){
-      doc.setFillColor(PDF_GOLD[0], PDF_GOLD[1], PDF_GOLD[2]);
-      doc.rect(0, 0, pageW, 16, 'F');
-      doc.setTextColor(255, 255, 255);
-      doc.setFont(undefined, 'bold');
-      doc.setFontSize(13);
-      doc.text('SimuPesa', margin.left, 10.5);
-      doc.setFont(undefined, 'normal');
-      doc.setFontSize(9);
-      doc.text('ID ya Maombi: ' + (humanId || '-'), pageW - margin.right, 10.5, { align: 'right' });
-    }
-
-    function drawFooter(){
-      doc.setDrawColor(PDF_LINE[0], PDF_LINE[1], PDF_LINE[2]);
-      doc.line(margin.left, pageH - 14, pageW - margin.right, pageH - 14);
-      doc.setTextColor(PDF_TEXT[0], PDF_TEXT[1], PDF_TEXT[2]);
-      doc.setFont(undefined, 'normal');
-      doc.setFontSize(8);
-      doc.text('Imetengenezwa: ' + generatedAt, margin.left, pageH - 9);
+      doc.setFillColor(179, 130, 47);
+      doc.rect(0, 0, pageWidth, 3, 'F');
+      doc.setFont(undefined, 'bold'); doc.setFontSize(10); doc.setTextColor(28, 33, 48);
+      doc.text('SimuPesa', margin, 12);
+      doc.setFont(undefined, 'normal'); doc.setFontSize(8); doc.setTextColor(120, 120, 120);
+      doc.text('ID: ' + (app.applicationId || '-'), pageWidth - margin, 12, { align: 'right' });
+      doc.setDrawColor(227, 221, 208);
+      doc.line(margin, 15, pageWidth - margin, 15);
+      y = 22;
     }
 
     function newPage(){
       doc.addPage();
       drawHeader();
-      drawFooter();
-      y = margin.top;
     }
 
-    function ensureSpace(next){
-      if (y + next > pageH - margin.bottom) newPage();
+    function ensureSpace(neededMm){
+      if (y + neededMm > pageHeight - 20) newPage();
     }
 
-    function sectionBand(title){
-      ensureSpace(10);
-      doc.setFillColor(PDF_PANEL[0], PDF_PANEL[1], PDF_PANEL[2]);
-      doc.rect(margin.left, y, pageW - margin.left - margin.right, 7, 'F');
-      doc.setTextColor(PDF_TEAL[0], PDF_TEAL[1], PDF_TEAL[2]);
-      doc.setFont(undefined, 'bold');
-      doc.setFontSize(10.5);
-      doc.text(title, margin.left + 2, y + 5);
-      y += 10;
-      doc.setTextColor(PDF_TEXT[0], PDF_TEXT[1], PDF_TEXT[2]);
+    function sectionHeader(title){
+      ensureSpace(11);
+      doc.setFillColor(242, 239, 232);
+      doc.rect(margin - 2, y - 5, pageWidth - (margin - 2) * 2, 8, 'F');
+      doc.setFont(undefined, 'bold'); doc.setFontSize(11); doc.setTextColor(18, 138, 114);
+      doc.text(title, margin, y);
+      y += 8;
     }
 
-    function fieldTable(rows){
-      var body = rows
-        .filter(function (r) { return r[2] !== false; })
-        .map(function (r) { return [r[0], (r[1] === null || r[1] === undefined || r[1] === '') ? '-' : String(r[1])]; });
-      doc.autoTable({
-        startY: y,
-        margin: { left: margin.left, right: margin.right, top: margin.top, bottom: margin.bottom },
-        body: body,
-        theme: 'plain',
-        styles: { font: 'helvetica', fontSize: 9.5, textColor: PDF_TEXT, cellPadding: { top: 1.3, bottom: 1.3, left: 2, right: 2 } },
-        columnStyles: { 0: { fontStyle: 'bold', cellWidth: 55 }, 1: { cellWidth: pageW - margin.left - margin.right - 55 } },
-        didDrawPage: function () { drawHeader(); drawFooter(); }
-      });
-      y = doc.lastAutoTable.finalY + 5;
+    function keyValueRow(label, value){
+      var valueText = (value === undefined || value === null || value === '') ? '-' : String(value);
+      doc.setFontSize(9.5);
+      var maxWidth = pageWidth - margin - valueX;
+      var lines = doc.splitTextToSize(valueText, maxWidth);
+      var neededHeight = Math.max(lines.length, 1) * 4.6 + 1.5;
+      ensureSpace(neededHeight);
+      doc.setFont(undefined, 'bold'); doc.setTextColor(28, 33, 48);
+      doc.text(String(label) + ':', margin, y);
+      doc.setFont(undefined, 'normal'); doc.setTextColor(55, 55, 55);
+      doc.text(lines, valueX, y);
+      y += neededHeight;
     }
 
-    function drawSinglePhoto(title, src, x, boxY, w, h, dim){
-      doc.setFont(undefined, 'bold');
-      doc.setFontSize(9);
-      doc.setTextColor(PDF_TEXT[0], PDF_TEXT[1], PDF_TEXT[2]);
-      doc.text(title, x, boxY - 2);
-      if (!src) {
-        doc.setDrawColor(PDF_LINE[0], PDF_LINE[1], PDF_LINE[2]);
-        doc.setFillColor(PDF_PANEL[0], PDF_PANEL[1], PDF_PANEL[2]);
-        doc.rect(x, boxY, w, h, 'FD');
-        doc.setFont(undefined, 'normal');
-        doc.setFontSize(9);
-        doc.text('Hakuna picha iliyowekwa', x + w / 2, boxY + h / 2, { align: 'center' });
-        return;
-      }
-      try {
-        var format = pdfImageFormat(src);
-        var drawW = w, drawH = h;
-        if (dim && dim.w && dim.h) {
-          var ratio = dim.h / dim.w;
-          drawH = Math.min(h, w * ratio);
-          drawW = drawH / ratio;
-        }
-        var offsetX = x + (w - drawW) / 2;
-        var offsetY = boxY + (h - drawH) / 2;
-        doc.addImage(src, format, offsetX, offsetY, drawW, drawH);
-      } catch (err) {
-        console.error('photo embed failed', err);
-        doc.setDrawColor(PDF_LINE[0], PDF_LINE[1], PDF_LINE[2]);
-        doc.rect(x, boxY, w, h);
-        doc.setFontSize(9);
-        doc.text('Picha haikuweza kupakiwa', x + w / 2, boxY + h / 2, { align: 'center' });
-      }
+    function renderSection(title, rows){
+      var visible = rows.filter(function (r) { return r; });
+      if (!visible.length) return;
+      sectionHeader(title);
+      visible.forEach(function (r) { keyValueRow(r[0], r[1]); });
+      y += 3;
     }
 
-    async function addPhotoPair(leftTitle, leftSrc, rightTitle, rightSrc){
-      sectionBand('Picha za Simu');
-      var colW = (pageW - margin.left - margin.right - 6) / 2;
-      var maxH = 90;
-      var leftDim = await getImageNaturalSize(leftSrc);
-      var rightDim = await getImageNaturalSize(rightSrc);
-      var leftH = leftDim ? Math.min(maxH, colW * (leftDim.h / leftDim.w)) : maxH;
-      var rightH = rightDim ? Math.min(maxH, colW * (rightDim.h / rightDim.w)) : maxH;
-      var blockH = Math.max(leftH, rightH) + 8;
-      ensureSpace(blockH);
-      drawSinglePhoto(leftTitle, leftSrc, margin.left, y + 2, colW, leftH, leftDim);
-      drawSinglePhoto(rightTitle, rightSrc, margin.left + colW + 6, y + 2, colW, rightH, rightDim);
-      y += blockH + 6;
+    var audienceLabel = audience === 'seller' ? 'Nakala ya Muuzaji' : (audience === 'inspector' ? 'Nakala ya Mkaguzi' : 'Nakala ya Admin');
+    var statusLabel = !app.response ? 'Inasubiri majibu' : (app.response.status === 'approved' ? 'Imekubaliwa' : 'Imekataliwa');
+
+    /* ---- Cover / summary page ---- */
+    doc.setFillColor(28, 33, 48);
+    doc.rect(0, 0, pageWidth, 38, 'F');
+    doc.setTextColor(251, 250, 247); doc.setFont(undefined, 'bold'); doc.setFontSize(18);
+    doc.text('SimuPesa', margin, 16);
+    doc.setFont(undefined, 'normal'); doc.setFontSize(10);
+    doc.text('Muhtasari wa Maombi ya Kuuza Simu Used', margin, 24);
+    doc.setFontSize(8.5); doc.setTextColor(220, 215, 205);
+    doc.text(audienceLabel, margin, 31);
+
+    y = 46;
+    keyValueRow('Jina la Muuzaji', app.fullName || d.a && d.a.fullname);
+    if (audience !== 'inspector') keyValueRow('Namba ya Simu', app.phone || (d.a && d.a.phone));
+    keyValueRow('ID ya Maombi', app.applicationId);
+    keyValueRow('Tarehe ya Kutuma', app.submittedAt ? formatDateTime(app.submittedAt) : '-');
+    keyValueRow('Hali ya Maombi', statusLabel);
+    if (audience !== 'inspector' && app.response && app.response.status === 'approved' && app.response.agreedPrice) {
+      keyValueRow('Bei Iliyokubaliwa', formatMoneyTZS(app.response.agreedPrice));
     }
+    y += 4;
+    doc.setDrawColor(227, 221, 208);
+    doc.line(margin, y, pageWidth - margin, y);
+    y += 8;
 
-    async function addPhotoSingle(title, src){
-      var w = pageW - margin.left - margin.right;
-      var maxH = 120;
-      var dim = await getImageNaturalSize(src);
-      var h = dim ? Math.min(maxH, w * (dim.h / dim.w)) : maxH;
-      ensureSpace(h + 10);
-      drawSinglePhoto(title, src, margin.left, y + 2, w, h, dim);
-      y += h + 8;
-    }
-
-    /* Page 1 header/footer (subsequent pages handled by newPage() /
-       autoTable's didDrawPage). */
-    drawHeader();
-    drawFooter();
-
-    /* Field-visibility variants: the inspector copy skips personal ID
-       fields and commercial price/decision info (technical condition
-       only); seller and admin copies include everything relevant to
-       them. Adjust this map if your review process differs. */
-    var sections = options.sections || (
-      audience === 'inspector'
-        ? ['cover', 'b', 'c', 'd', 'f', 'g', 'h', 'photos']
-        : ['cover', 'a', 'b', 'c', 'd', 'f', 'g', 'h', 'i', 'k', 'conf', 'decision', 'photos']
-    );
-    function has(key){ return sections.indexOf(key) !== -1; }
-
-    if (has('cover')) {
-      sectionBand('Taarifa Muhimu');
-      var coverRows = [
-        ['Jina la Muuzaji', row.a_full_name],
-        ['Namba ya Simu', row.a_phone],
-        ['ID ya Maombi', humanId]
-      ];
-      if (row.submitted_at) coverRows.push(['Tarehe ya Kutuma', fmtDate(row.submitted_at)]);
-      if (response) {
-        coverRows.push(['Hali ya Maombi', response.status === 'approved' ? 'Imekubaliwa' : 'Imekataliwa']);
-        if (response.status === 'approved') coverRows.push(['Bei Iliyokubaliwa', fmtMoney(response.agreed_price)]);
-      }
-      fieldTable(coverRows);
-    }
-
-    if (has('a')) {
-      sectionBand('A. Taarifa za Muuzaji');
-      fieldTable([
-        ['Jina kamili', row.a_full_name], ['Namba ya simu', row.a_phone], ['NIDA', row.a_nida],
-        ['Eneo anapoishi', row.a_location], ['Tarehe ya kuuza', row.a_sale_date], ['Sababu', row.a_reason]
+    /* ---- Sections A-K (inspector copy skips personal ID + pricing) ---- */
+    if (audience !== 'inspector') {
+      renderSection('A. Taarifa za Muuzaji', [
+        ['Jina kamili', d.a && d.a.fullname], ['Namba ya simu', d.a && d.a.phone], ['NIDA', d.a && d.a.nida],
+        ['Eneo anapoishi', d.a && d.a.location], ['Tarehe ya kuuza', d.a && d.a.saledate], ['Sababu', d.a && d.a.reason]
       ]);
     }
-
-    if (has('b')) {
-      sectionBand('B. Utambulisho wa Simu');
-      fieldTable([
-        ['Brand', row.b_brand], ['Model', row.b_model], ['Model Number', row.b_model_number],
-        ['IMEI 1', row.b_imei1], ['IMEI 2', row.b_imei2], ['Serial Number', row.b_serial],
-        ['Storage', row.b_storage], ['Network', row.b_network], ['Dual SIM', row.b_dual_sim]
+    renderSection('B. Utambulisho wa Simu', [
+      ['Brand', d.b && d.b.brand], ['Model', d.b && d.b.model], ['Model Number', d.b && d.b.modelnum],
+      ['IMEI 1', d.b && d.b.imei1], ['IMEI 2', d.b && d.b.imei2], ['Serial Number', d.b && d.b.serial],
+      ['Storage', d.b && d.b.storage], ['Network', d.b && d.b.network], ['Dual SIM', d.b && d.b.dualsim]
+    ]);
+    renderSection('C. Hali ya Nje ya Simu', [
+      ['Screen', d.c && d.c.screen], ['Touch', d.c && d.c.touch], ['Frame/Body', d.c && d.c.frame],
+      ['Back Cover', d.c && d.c.backcover], ['Camera Glass', d.c && d.c.camglass], ['Camera Lens', d.c && d.c.camlens],
+      ['Buttons', d.c && d.c.buttons], ['Charging Port', d.c && d.c.chargeport], ['SIM Tray', d.c && d.c.simtray],
+      ['Speaker', d.c && d.c.speaker], ['Microphone', d.c && d.c.mic]
+    ]);
+    renderSection('D. Battery', [
+      ['Battery Health', (d.d && d.d.health !== undefined && d.d.health !== null && d.d.health !== '') ? d.d.health + '%' : null],
+      ['Imebadilishwa', d.d && d.d.replaced], ['Inachaji vizuri', d.d && d.d.chargesok],
+      ['Inapata joto', d.d && d.d.overheats], ['Inashuka haraka', d.d && d.d.drainsfast]
+    ]);
+    renderSection('F. Camera', [
+      ['Front Camera', d.f && d.f.front], ['Main Camera', d.f && d.f.main], ['Ultrawide', d.f && d.f.ultrawide],
+      ['Telephoto', d.f && d.f.telephoto], ['Flash', d.f && d.f.flash], ['Video Recording', d.f && d.f.video], ['Camera Focus', d.f && d.f.focus]
+    ]);
+    renderSection('G. Mfumo & Security', [
+      ['Inawaka vizuri', d.g && d.g.powers], ['Fingerprint', d.g && d.g.fingerprint], ['Face ID', d.g && d.g.faceid],
+      ['Wi-Fi', d.g && d.g.wifi], ['Bluetooth', d.g && d.g.bt], ['GPS', d.g && d.g.gps], ['Mobile Network', d.g && d.g.network],
+      ['Calls', d.g && d.g.calls], ['SMS', d.g && d.g.sms], ['Internet/Data', d.g && d.g.internet]
+    ]);
+    renderSection('H. Historia ya Simu', [
+      ['Imewahi kufunguliwa', d.h && d.h.opened], ['Imewahi kutengenezwa', d.h && d.h.repaired],
+      ['Screen kubadilishwa', d.h && d.h.screenchanged], ['Battery kubadilishwa', d.h && d.h.batterychanged],
+      ['Imewahi kuanguka sana', d.h && d.h.dropped], ['Imewahi kuingia maji', d.h && d.h.water], ['Spare parts', d.h && d.h.spareparts]
+    ]);
+    if (audience !== 'inspector') {
+      renderSection('I. Vifaa Vinavyoambatana', [
+        ['Receipt', d.i ? (d.i.receipt ? 'Ndiyo' : 'Hapana') : null],
+        ['Warranty Card', d.i ? (d.i.warranty ? 'Ndiyo' : 'Hapana') : null],
+        ['Purchase Invoice', d.i ? (d.i.invoice ? 'Ndiyo' : 'Hapana') : null],
+        ['Other', d.i && d.i.other]
       ]);
-    }
-
-    if (has('c')) {
-      sectionBand('C. Hali ya Nje ya Simu');
-      fieldTable([
-        ['Screen', row.c_screen], ['Touch', row.c_touch], ['Frame/Body', row.c_frame],
-        ['Back Cover', row.c_backcover], ['Camera Glass', row.c_camera_glass], ['Camera Lens', row.c_camera_lens],
-        ['Buttons', row.c_buttons], ['Charging Port', row.c_charging_port], ['SIM Tray', row.c_sim_tray],
-        ['Speaker', row.c_speaker], ['Microphone', row.c_microphone]
-      ]);
-    }
-
-    if (has('d')) {
-      sectionBand('D. Battery');
-      fieldTable([
-        ['Battery Health', row.d_battery_health != null ? row.d_battery_health + '%' : '-'],
-        ['Imebadilishwa', row.d_replaced], ['Inachaji vizuri', row.d_charges_ok],
-        ['Inapata joto', row.d_overheats], ['Inashuka haraka', row.d_drains_fast]
-      ]);
-    }
-
-    if (has('f')) {
-      sectionBand('F. Camera');
-      fieldTable([
-        ['Front Camera', row.f_front], ['Main Camera', row.f_main], ['Ultrawide', row.f_ultrawide],
-        ['Telephoto', row.f_telephoto], ['Flash', row.f_flash], ['Video Recording', row.f_video], ['Camera Focus', row.f_focus]
-      ]);
-    }
-
-    if (has('g')) {
-      sectionBand('G. Mfumo & Security');
-      fieldTable([
-        ['Inawaka vizuri', row.g_powers_on], ['Fingerprint', row.g_fingerprint], ['Face ID', row.g_face_id],
-        ['Wi-Fi', row.g_wifi], ['Bluetooth', row.g_bluetooth], ['GPS', row.g_gps], ['Mobile Network', row.g_mobile_network],
-        ['Calls', row.g_calls], ['SMS', row.g_sms], ['Internet/Data', row.g_internet]
-      ]);
-    }
-
-    if (has('h')) {
-      sectionBand('H. Historia ya Simu');
-      fieldTable([
-        ['Imewahi kufunguliwa', row.h_opened], ['Imewahi kutengenezwa', row.h_repaired],
-        ['Screen kubadilishwa', row.h_screen_changed], ['Battery kubadilishwa', row.h_battery_changed],
-        ['Imewahi kuanguka sana', row.h_dropped_hard], ['Imewahi kuingia maji', row.h_water_damage], ['Spare parts', row.h_spare_parts]
-      ]);
-    }
-
-    if (has('i')) {
-      sectionBand('I. Vifaa Vinavyoambatana');
-      fieldTable([
-        ['Receipt', row.i_has_receipt ? 'Ndiyo' : 'Hapana'], ['Warranty Card', row.i_has_warranty ? 'Ndiyo' : 'Hapana'],
-        ['Purchase Invoice', row.i_has_invoice ? 'Ndiyo' : 'Hapana'], ['Other', row.i_other]
-      ]);
-    }
-
-    if (has('k')) {
-      sectionBand('K. Bei');
-      fieldTable([
-        ['Bei anayotaka muuzaji', fmtMoney(row.k_asking_price)],
+      renderSection('K. Bei', [
+        ['Bei anayotaka muuzaji', d.k ? formatMoneyTZS(d.k.asking) : null],
         ['Bei ya mwisho', 'Hukubaliwa kati ya muuzaji na mnunuzi']
       ]);
+      renderSection('Uthibitisho wa Muuzaji', [
+        ['Sahihi (jina)', d.conf && d.conf.signature], ['Tarehe', d.conf && d.conf.date]
+      ]);
     }
-
-    if (has('conf')) {
-      sectionBand('Uthibitisho wa Muuzaji');
-      fieldTable([
-        ['Sahihi (jina)', row.conf_signature], ['Tarehe', row.conf_date]
+    if (audience === 'admin' && app.response) {
+      renderSection('Uamuzi wa Admin', [
+        ['Hali', app.response.status === 'approved' ? 'Imekubaliwa' : 'Imekataliwa'],
+        ['Sababu', app.response.reason],
+        app.response.status === 'approved' ? ['Bei Iliyokubaliwa', formatMoneyTZS(app.response.agreedPrice)] : null
       ]);
     }
 
-    if (has('decision') && response) {
-      sectionBand('Majibu ya Admin');
-      fieldTable([
-        ['Hali', response.status === 'approved' ? 'Imekubaliwa' : 'Imekataliwa'],
-        ['Sababu', response.reason],
-        ['Bei Iliyokubaliwa', response.status === 'approved' ? fmtMoney(response.agreed_price) : '-']
-      ]);
+    /* ---- Photos ---- */
+    var photos = app.photos || {};
+    newPage();
+    doc.setFont(undefined, 'bold'); doc.setFontSize(12); doc.setTextColor(28, 33, 48);
+    doc.text('Picha za Simu', margin, y);
+    y += 8;
+
+    async function drawPhotoBox(caption, url, x, boxY, w, h){
+      doc.setDrawColor(227, 221, 208);
+      doc.rect(x, boxY, w, h);
+      try {
+        var dataUrl = await loadImageAsDataUrl(url);
+        if (!dataUrl) {
+          doc.setFont(undefined, 'normal'); doc.setFontSize(8.5); doc.setTextColor(150, 150, 150);
+          doc.text(url ? 'Picha haikuweza kupakuliwa.' : 'Hakuna picha iliyowekwa.', x + w / 2, boxY + h / 2, { align: 'center' });
+        } else {
+          var size = await getImageNaturalSize(dataUrl);
+          var pad = 4;
+          var maxW = w - pad * 2, maxH = h - pad * 2;
+          if (size && size.w && size.h) {
+            var scale = Math.min(maxW / size.w, maxH / size.h);
+            var drawW = size.w * scale, drawH = size.h * scale;
+            doc.addImage(dataUrl, imgFormatFromDataUrl(dataUrl), x + (w - drawW) / 2, boxY + (h - drawH) / 2, drawW, drawH);
+          } else {
+            doc.addImage(dataUrl, imgFormatFromDataUrl(dataUrl), x + pad, boxY + pad, maxW, maxH);
+          }
+        }
+      } catch (imgErr) {
+        console.warn('Photo render error, continuing PDF:', caption, imgErr);
+        doc.setFont(undefined, 'normal'); doc.setFontSize(8.5); doc.setTextColor(150, 150, 150);
+        doc.text('Picha haikuweza kufunguliwa.', x + w / 2, boxY + h / 2, { align: 'center' });
+      }
+      doc.setFont(undefined, 'normal'); doc.setFontSize(9); doc.setTextColor(90, 90, 90);
+      doc.text(caption, x, boxY + h + 5);
     }
 
-    if (has('photos')) {
-      await addPhotoPair('Mbele ya simu', photos.front, 'Nyuma ya simu', photos.back);
-      await addPhotoSingle('Warranty / Receipt / Invoice', photos.supporting);
+    var colWidth = (pageWidth - margin * 2 - 6) / 2;
+    var boxHeight = 92;
+    await drawPhotoBox('Picha ya Mbele', photos.front, margin, y, colWidth, boxHeight);
+    await drawPhotoBox('Picha ya Nyuma', photos.back, margin + colWidth + 6, y, colWidth, boxHeight);
+    y += boxHeight + 14;
+
+    if (photos.supporting) {
+      ensureSpace(boxHeight + 14);
+      await drawPhotoBox('Picha ya Ziada (Warranty / Receipt / Invoice)', photos.supporting, margin, y, pageWidth - margin * 2, boxHeight);
+      y += boxHeight + 14;
+    } else {
+      keyValueRow('Picha ya Ziada', 'Hakuna picha iliyowekwa');
     }
 
+    /* ---- Footer on every page ---- */
     var totalPages = doc.internal.getNumberOfPages();
+    var generatedStr = formatDateTime(new Date().toISOString());
     for (var p = 1; p <= totalPages; p++) {
       doc.setPage(p);
-      doc.setTextColor(PDF_TEXT[0], PDF_TEXT[1], PDF_TEXT[2]);
-      doc.setFont(undefined, 'normal');
-      doc.setFontSize(8);
-      doc.text('Ukurasa ' + p + ' wa ' + totalPages, pageW - margin.right, pageH - 9, { align: 'right' });
+      doc.setFont(undefined, 'normal'); doc.setFontSize(8); doc.setTextColor(140, 140, 140);
+      doc.text('Ukurasa ' + p + ' / ' + totalPages, pageWidth / 2, pageHeight - 10, { align: 'center' });
+      doc.text('Imetengenezwa: ' + generatedStr, margin, pageHeight - 10);
+      doc.text('SimuPesa · ' + (app.applicationId || ''), pageWidth - margin, pageHeight - 10, { align: 'right' });
     }
 
     return doc;
   }
 
-  /* ===================== FINALIZE (Dhibitisha) — insert + upload ===================== */
+  /* ===================== FINALIZE (Dhibitisha) ===================== */
   var sellerPdfUrl = null;
-
-  async function dataUrlToBlob(dataUrl){
-    var res = await fetch(dataUrl);
-    return await res.blob();
-  }
 
   async function finalizeSubmission(){
     var confirmBtn = document.getElementById('confirmSubmitBtn');
     var confirmErr = document.getElementById('confirmError');
     confirmErr.textContent = '';
     confirmBtn.disabled = true;
-    confirmBtn.textContent = 'Inatuma...';
+
+    if (!hasSupabaseConnection()) {
+      confirmErr.textContent = 'Muunganisho wa mtandao haupo. Jaribu tena baadaye.';
+      confirmBtn.disabled = false;
+      return;
+    }
+    if (!currentApplicant || !currentApplicant.sellerId) {
+      confirmErr.textContent = 'Kikao chako kimeisha. Tafadhali ingia tena.';
+      confirmBtn.disabled = false;
+      return;
+    }
 
     try {
-      if (!currentApplicant) throw new Error('NO_SESSION');
-      if (!hasSupabaseConnection()) throw new Error('NO_CONNECTION');
+      var data = collectFormData();
+      data.applicationId = currentApplicant.applicationId;
+      var appCode = currentApplicant.applicationId || 'app';
 
-      var payload = collectFormPayload();
-
-      var insertResult = await supabaseClient.from('applications').insert(payload).select('id').single();
-      if (insertResult.error) throw insertResult.error;
-      var applicationPk = insertResult.data.id;
-      var sellerId = currentApplicant.seller_id;
-
-      var paths = {
-        front: sellerId + '/front.jpg',
-        back: sellerId + '/back.jpg',
-        supporting: supportingPhotoData ? sellerId + '/supporting.jpg' : null
-      };
-
-      async function uploadPhoto(path, dataUrl){
-        var blob = await dataUrlToBlob(dataUrl);
-        var uploadResult = await supabaseClient.storage.from(PHOTO_BUCKET).upload(path, blob, { upsert: true, contentType: 'image/jpeg' });
-        if (uploadResult.error) throw uploadResult.error;
+      confirmBtn.textContent = 'Inapakia picha...';
+      var frontUrl, backUrl, supportingUrl = null;
+      try {
+        frontUrl = await uploadPhotoToCloudinary(frontPhotoData, appCode + '-front');
+        backUrl = await uploadPhotoToCloudinary(backPhotoData, appCode + '-back');
+      } catch (uploadErr) {
+        console.error('Required photo upload failed:', uploadErr);
+        confirmErr.textContent = 'Imeshindikana kupakia picha za simu. Angalia mtandao wako kisha jaribu tena.';
+        confirmBtn.disabled = false;
+        confirmBtn.textContent = 'Dhibitisha';
+        return;
+      }
+      if (supportingPhotoData) {
+        try { supportingUrl = await uploadPhotoToCloudinary(supportingPhotoData, appCode + '-supporting'); }
+        catch (suppErr) { console.warn('Supporting photo upload failed, continuing without it:', suppErr); supportingUrl = null; }
       }
 
-      await uploadPhoto(paths.front, frontPhotoData);
-      await uploadPhoto(paths.back, backPhotoData);
-      if (paths.supporting) await uploadPhoto(paths.supporting, supportingPhotoData);
-
-      var photoInsert = await supabaseClient.from('application_photos').insert({
-        application_id: applicationPk,
-        front_path: paths.front,
-        back_path: paths.back,
-        supporting_path: paths.supporting
+      confirmBtn.textContent = 'Inatuma taarifa...';
+      var payload = buildApplicationPayload(data);
+      var submitResult = await supabaseClient.rpc('submit_seller_application', {
+        p_seller_id: currentApplicant.sellerId,
+        p_passkey: currentApplicant.passkey,
+        p_application: payload,
+        p_front_path: frontUrl,
+        p_back_path: backUrl,
+        p_supporting_path: supportingUrl
       });
-      if (photoInsert.error) throw photoInsert.error;
+      if (submitResult.error) throw submitResult.error;
 
-      var photosForPdf = { front: frontPhotoData, back: backPhotoData, supporting: supportingPhotoData };
-      var doc = await buildApplicationPdf(payload, currentApplicant.application_id, photosForPdf, null, { audience: 'seller' });
+      confirmBtn.textContent = 'Inatengeneza PDF...';
+      var photos = { front: frontUrl, back: backUrl, supporting: supportingUrl };
+      var doc = await generateApplicationPDF({
+        applicationId: data.applicationId,
+        fullName: data.a.fullname,
+        phone: data.a.phone,
+        submittedAt: new Date().toISOString(),
+        data: data,
+        photos: photos,
+        response: null
+      }, { audience: 'seller' });
+
       if (sellerPdfUrl) URL.revokeObjectURL(sellerPdfUrl);
       sellerPdfUrl = URL.createObjectURL(doc.output('blob'));
 
+      currentApplicant.hasSubmitted = true;
       document.getElementById('confirmModal').classList.remove('is-active');
       document.getElementById('successModal').classList.add('is-active');
     } catch (err) {
-      console.error('finalizeSubmission failed', err);
-      if (err && err.code === '23505') {
-        confirmErr.textContent = 'Umeshawahi kutuma fomu hii kabla. Wasiliana na admin kama unahitaji kuirekebisha.';
+      console.error('Finalize submission error:', err);
+      var errMsg = (err && err.message) || '';
+      if (errMsg.indexOf('ALREADY_SUBMITTED') !== -1) {
+        confirmErr.textContent = 'Umeshatuma fomu hii tayari.';
+      } else if (errMsg.indexOf('INVALID_PASSKEY') !== -1 || errMsg.indexOf('SELLER_NOT_FOUND') !== -1) {
+        confirmErr.textContent = 'Kikao chako si sahihi tena. Tafadhali ingia upya kisha jaribu tena.';
       } else {
-        confirmErr.textContent = 'Kuna hitilafu. Angalia intaneti yako na jaribu tena.';
+        confirmErr.textContent = 'Kuna hitilafu katika kutuma maombi. Jaribu tena.';
       }
     } finally {
       confirmBtn.disabled = false;
@@ -2743,15 +2782,18 @@
 
   async function adminLogout(){
     if (supabaseClient) await supabaseClient.auth.signOut();
+    adminDataCache = null;
     history.replaceState(null, '', window.location.pathname + window.location.search);
     showView('siteView');
   }
 
   /* ===================== ADMIN: REGISTER SELLER ===================== */
-  /* The passkey is generated AND hashed server-side inside the
-     admin_register_seller RPC — it comes back in plaintext exactly
-     once, for the admin to hand to the seller, and is never stored
-     anywhere in plaintext. */
+  /* Plaintext passkeys only ever exist in the RPC response — kept here,
+     in memory, only for the lifetime of this tab, so the table can show
+     a freshly-registered seller's real passkey once before a reload
+     replaces it with a masked placeholder (the hash can't be reversed). */
+  var knownPasskeys = {};
+
   document.getElementById('registerForm').addEventListener('submit', async function (e) {
     e.preventDefault();
     var first = document.getElementById('r_first').value.trim();
@@ -2759,34 +2801,49 @@
     var last = document.getElementById('r_last').value.trim();
     var phone = document.getElementById('r_phone').value.trim();
     var errEl = document.getElementById('registerError');
-    errEl.textContent = '';
+    var submitBtn = this.querySelector('button[type="submit"]');
 
     if (!first || !last || !phone) {
       errEl.textContent = 'Jaza jina la kwanza, la mwisho na namba ya simu.';
       return;
     }
+    if (!hasSupabaseConnection()) {
+      errEl.textContent = 'Muunganisho wa Supabase haujapatikana.';
+      return;
+    }
 
     var fullName = [first, middle, last].filter(Boolean).join(' ');
-    var submitBtn = this.querySelector('button[type="submit"]');
+    errEl.textContent = '';
     submitBtn.disabled = true;
-
+    submitBtn.textContent = 'Inasajili...';
     try {
-      var rpcResult = await supabaseClient.rpc('admin_register_seller', { p_full_name: fullName, p_phone: phone });
-      if (rpcResult.error) throw rpcResult.error;
-      var result = Array.isArray(rpcResult.data) ? rpcResult.data[0] : rpcResult.data;
+      var result = await supabaseClient.rpc('register_seller_application', {
+        p_full_name: fullName,
+        p_phone: phone
+      });
+      if (result.error) throw result.error;
+      var row = result.data && result.data[0];
+      if (!row) throw new Error('REGISTER_FAILED');
+
+      knownPasskeys[row.application_id] = row.passkey;
 
       document.getElementById('registerForm').reset();
-      document.getElementById('passkeyCode').textContent = result.passkey;
+      document.getElementById('passkeyCode').textContent = row.passkey;
       document.getElementById('passkeyDisplay').classList.add('is-active');
-      await renderAdminTables();
+      await renderAdminTables(true);
     } catch (error) {
-      console.error('register seller failed', error);
+      console.error('Register seller error:', error);
       var msg = (error && error.message) || '';
-      errEl.textContent = msg.indexOf('PHONE_ALREADY_REGISTERED') !== -1
-        ? 'Namba hii tayari imesajiliwa kwa muuzaji mwingine.'
-        : 'Imeshindikana kusajili muuzaji. Jaribu tena.';
+      if (msg.indexOf('PHONE_ALREADY_REGISTERED') !== -1 || error.code === '23505') {
+        errEl.textContent = 'Namba hii tayari imesajiliwa kwa muuzaji mwingine.';
+      } else if (msg.indexOf('NOT_AUTHORIZED') !== -1) {
+        errEl.textContent = 'Akaunti yako haina ruhusa ya kusajili wauzaji.';
+      } else {
+        errEl.textContent = 'Imeshindikana kusajili muuzaji. Jaribu tena.';
+      }
     } finally {
       submitBtn.disabled = false;
+      submitBtn.textContent = 'Sajili & Tengeneza Passkey';
     }
   });
 
@@ -2805,18 +2862,39 @@
     }
   }
 
-  var respondingApplicationId = null;   // human-facing ID, for display
-  var respondingApplicationPk = null;   // applications.id (uuid)
+  /* ===================== ADMIN: RESPOND TO AN APPLICATION ===================== */
+  var respondingApplicationId = null;
+  var respondingApplicationPk = null;
   var selectedResponseStatus = null;
 
-  function openAdminResponse(applicationId){
-    var overview = adminOverviewCache.find(function(item){ return item.application_id === applicationId; });
-    if (!overview || !overview.application_id_pk) return;
+  async function openAdminResponse(applicationId){
+    if (!hasSupabaseConnection()) return;
     respondingApplicationId = applicationId;
-    respondingApplicationPk = overview.application_id_pk;
-    document.getElementById('adminResponseApplicant').textContent = overview.full_name + ' · ' + applicationId;
+    respondingApplicationPk = null;
+    document.getElementById('adminResponseApplicant').textContent = 'Inapakia...';
     document.getElementById('adminResponseModal').classList.add('is-active');
     resetResponseModal();
+    try {
+      var sellerResult = await supabaseClient.from('sellers').select('id, full_name').eq('application_id', applicationId).maybeSingle();
+      if (sellerResult.error) throw sellerResult.error;
+      if (!sellerResult.data) {
+        document.getElementById('adminResponseApplicant').textContent = 'Muuzaji hakupatikana.';
+        return;
+      }
+      var appResult = await supabaseClient.from('applications').select('id').eq('seller_id', sellerResult.data.id).maybeSingle();
+      if (appResult.error) throw appResult.error;
+      document.getElementById('adminResponseApplicant').textContent = sellerResult.data.full_name + ' · ' + applicationId;
+      if (!appResult.data) {
+        document.getElementById('adminResponseError').textContent = 'Muuzaji bado hajatuma fomu yake.';
+        document.getElementById('responseChoices').style.display = 'none';
+        document.getElementById('responseCloseRow').style.display = 'flex';
+        return;
+      }
+      respondingApplicationPk = appResult.data.id;
+    } catch (error) {
+      console.error('Open admin response error:', error);
+      document.getElementById('adminResponseApplicant').textContent = 'Hitilafu kupakia taarifa.';
+    }
   }
 
   function closeAdminResponse(){
@@ -2847,40 +2925,64 @@
 
   document.getElementById('adminResponseForm').addEventListener('submit', async function (e) {
     e.preventDefault();
-    if (!respondingApplicationPk || !selectedResponseStatus) return;
+    var errEl = document.getElementById('adminResponseError');
     var submitBtn = this.querySelector('button[type="submit"]');
-    if (submitBtn) submitBtn.disabled = true;
+    errEl.textContent = '';
+
+    if (!respondingApplicationPk || !selectedResponseStatus) {
+      errEl.textContent = 'Maombi haya hayapo tayari kwa uamuzi.';
+      return;
+    }
+    if (!hasSupabaseConnection()) {
+      errEl.textContent = 'Muunganisho wa Supabase haujapatikana.';
+      return;
+    }
+
+    var reason = document.getElementById('responseReason').value.trim();
+    var agreedPriceRaw = document.getElementById('responseAgreedPrice').value.trim();
+
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Inatuma...';
     try {
-      var reason = document.getElementById('responseReason').value.trim();
-      var price = selectedResponseStatus === 'approved'
-        ? Number(document.getElementById('responseAgreedPrice').value.trim())
-        : null;
-      var rpcResult = await supabaseClient.rpc('admin_respond_to_application', {
-        p_application_id: respondingApplicationPk,
-        p_status: selectedResponseStatus,
-        p_reason: reason,
-        p_agreed_price: price
-      });
-      if (rpcResult.error) throw rpcResult.error;
+      var payload = {
+        application_id: respondingApplicationPk,
+        status: selectedResponseStatus,
+        reason: reason,
+        agreed_price: selectedResponseStatus === 'approved' && agreedPriceRaw !== '' ? Number(agreedPriceRaw) : null
+      };
+      var result = await supabaseClient.from('application_responses').upsert(payload, { onConflict: 'application_id' });
+      if (result.error) throw result.error;
       closeAdminResponse();
-      await renderAdminTables();
+      await renderAdminTables(true);
     } catch (error) {
-      console.error('admin response failed', error);
-      document.getElementById('adminResponseError').textContent = 'Imeshindikana kutuma majibu. Jaribu tena.';
+      console.error('Submit admin response error:', error);
+      errEl.textContent = 'Imeshindikana kutuma majibu. Jaribu tena.';
     } finally {
-      if (submitBtn) submitBtn.disabled = false;
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Tuma majibu';
     }
   });
 
   /* ===================== ADMIN: TABLES ===================== */
   var adminTableSort = { applicants: { key: '', direction: 'asc' }, printed: { key: '', direction: 'asc' } };
+  var adminDataCache = null; /* cached rows from admin_seller_overview */
 
-  function updateAdminStats(applicants, completed){
-    var successful = applicants.filter(function(a){ return a.login_status === 'success'; }).length;
-    document.getElementById('statApplicants').textContent = applicants.length;
-    document.getElementById('statCompleted').textContent = completed.length;
-    document.getElementById('statPending').textContent = applicants.filter(function(a){ return a.login_status === 'pending'; }).length;
-    document.getElementById('statLoginRate').textContent = applicants.length ? Math.round((successful / applicants.length) * 100) + '%' : '0%';
+  function loginStatusLabel(status){
+    return status === 'success' ? 'Ameingia' : (status === 'failed' ? 'Haikufaulu' : 'Anasubiri');
+  }
+  function responseLabel(status){
+    return status === 'approved' ? 'Imekubaliwa' : (status === 'rejected' ? 'Imekataliwa' : 'Hajajibiwa');
+  }
+
+  function updateAdminStatsFromRows(rows){
+    var total = rows.length;
+    var completed = rows.filter(function (r) { return r.submitted_at; }).length;
+    var pending = rows.filter(function (r) { return r.login_status === 'pending'; }).length;
+    var successful = rows.filter(function (r) { return r.login_status === 'success'; }).length;
+    document.getElementById('statApplicants').textContent = total;
+    document.getElementById('statCompleted').textContent = completed;
+    document.getElementById('statPending').textContent = pending;
+    document.getElementById('statLoginRate').textContent = total ? Math.round((successful / total) * 100) + '%' : '0%';
   }
 
   function getSortedRows(which, rows){
@@ -2899,12 +3001,252 @@
     if (!state.key) return;
     var headers = document.querySelectorAll('#' + which + 'Table th');
     headers.forEach(function(header){
-      if (header.getAttribute('onclick') && header.getAttribute('onclick').indexOf("'" + state.key + "'") !== -1) {
-        header.querySelector('.sort-caret').classList.add(state.direction);
+      var onclickAttr = header.getAttribute('onclick');
+      if (onclickAttr && onclickAttr.indexOf("'" + state.key + "'") !== -1) {
+        var caret = header.querySelector('.sort-caret');
+        if (caret) caret.classList.add(state.direction);
       }
     });
   }
 
+  function buildApplicantsRows(overviewRows){
+    return overviewRows.map(function (r) {
+      return {
+        applicationId: r.application_id,
+        fullName: r.full_name,
+        phone: r.phone,
+        passkey: knownPasskeys[r.application_id] || '•••••• (imefichwa)',
+        loginStatus: r.login_status,
+        responseStatus: r.response_status
+      };
+    });
+  }
+
+  function buildPrintedRows(overviewRows){
+    return overviewRows.filter(function (r) { return r.submitted_at; }).map(function (r) {
+      return { applicationId: r.application_id, fullname: r.full_name, phone: r.phone, completedAt: formatDateTime(r.submitted_at) };
+    });
+  }
+
+  function renderAdminTablesFromCache(){
+    var rows = adminDataCache || [];
+    updateAdminStatsFromRows(rows);
+
+    var applicantsRows = buildApplicantsRows(rows);
+    var tbody = document.getElementById('applicantsTbody');
+    var emptyNote = document.getElementById('applicantsEmpty');
+    tbody.innerHTML = '';
+    if (applicantsRows.length === 0) {
+      emptyNote.textContent = emptyNote.dataset.defaultMessage;
+      emptyNote.style.display = 'block';
+    } else {
+      emptyNote.style.display = 'none';
+      getSortedRows('applicants', applicantsRows).forEach(function (a) {
+        var tr = document.createElement('tr');
+        var statusHtml = a.loginStatus === 'success'
+          ? '<span class="status-cell"><span class="status-icon ok" title="Ameingia">&#10003;</span><span class="status-text">Ameingia</span></span>'
+          : (a.loginStatus === 'failed'
+            ? '<span class="status-cell"><span class="status-icon no" title="Jaribio limekataa">&#10007;</span><span class="status-text">Haikufaulu</span></span>'
+            : '<span class="status-cell"><span class="status-icon no" style="background:rgba(98,106,124,0.12);color:var(--muted);" title="Bado hajaingia">&#8212;</span><span class="status-text">Anasubiri</span></span>');
+        var applicationId = a.applicationId || '—';
+        var responseHtml = !a.responseStatus
+          ? '<button class="response-button" type="button" onclick="openAdminResponse(\'' + escapeHtml(applicationId) + '\')">Hajajibiwa</button>'
+          : (a.responseStatus === 'approved'
+            ? '<button class="response-button response-approved" type="button" onclick="openAdminResponse(\'' + escapeHtml(applicationId) + '\')">Imekubaliwa</button>'
+            : '<button class="response-button response-rejected" type="button" onclick="openAdminResponse(\'' + escapeHtml(applicationId) + '\')">Imekataliwa</button>');
+        tr.innerHTML = '<td><span class="application-id">' + escapeHtml(applicationId) + '</span></td><td><button class="table-link" type="button" onclick="showApplicationDetails(\'' + escapeHtml(applicationId) + '\')">' + escapeHtml(a.fullName) + '</button></td><td>' + escapeHtml(a.phone) +
+          '</td><td>' + escapeHtml(a.passkey) + '</td><td>' + statusHtml + '</td><td>' + responseHtml + '</td><td><button class="delete-application" type="button" onclick="deleteSellerApplication(\'' + escapeHtml(applicationId) + '\')">Futa</button></td>';
+        tbody.appendChild(tr);
+      });
+    }
+
+    var printedRows = buildPrintedRows(rows);
+    var ptbody = document.getElementById('printedTbody');
+    var pEmpty = document.getElementById('printedEmpty');
+    ptbody.innerHTML = '';
+    if (printedRows.length === 0) {
+      pEmpty.textContent = pEmpty.dataset.defaultMessage;
+      pEmpty.style.display = 'block';
+    } else {
+      pEmpty.style.display = 'none';
+      getSortedRows('printed', printedRows).forEach(function (c) {
+        var tr = document.createElement('tr');
+        tr.innerHTML = '<td><span class="application-id">' + escapeHtml(c.applicationId || '—') + '</span></td><td><button class="table-link" type="button" onclick="showApplicationDetails(\'' + escapeHtml(c.applicationId || '') + '\')">' + escapeHtml(c.fullname) + '</button></td><td>' + escapeHtml(c.phone) + '</td><td>' + escapeHtml(c.completedAt) + '</td>';
+        ptbody.appendChild(tr);
+      });
+    }
+    updateSortCarets('applicants');
+    updateSortCarets('printed');
+    filterAdminTable('applicants');
+    filterAdminTable('printed');
+  }
+
+  async function renderAdminTables(forceRefresh){
+    var applicantsEmpty = document.getElementById('applicantsEmpty');
+    var printedEmpty = document.getElementById('printedEmpty');
+
+    if (!hasSupabaseConnection()) {
+      applicantsEmpty.textContent = 'Muunganisho wa Supabase haujapatikana.';
+      applicantsEmpty.style.display = 'block';
+      printedEmpty.textContent = 'Muunganisho wa Supabase haujapatikana.';
+      printedEmpty.style.display = 'block';
+      return;
+    }
+
+    if (!adminDataCache || forceRefresh) {
+      applicantsEmpty.textContent = 'Inapakia...';
+      applicantsEmpty.style.display = 'block';
+      printedEmpty.textContent = 'Inapakia...';
+      printedEmpty.style.display = 'block';
+      try {
+        var result = await supabaseClient.from('admin_seller_overview').select('*').order('registered_at', { ascending: false });
+        if (result.error) throw result.error;
+        adminDataCache = result.data || [];
+      } catch (error) {
+        console.error('Load admin overview error:', error);
+        applicantsEmpty.textContent = 'Imeshindikana kupakia data. Jaribu tena.';
+        printedEmpty.textContent = 'Imeshindikana kupakia data. Jaribu tena.';
+        return;
+      }
+    }
+    renderAdminTablesFromCache();
+  }
+
+  /* ===================== ADMIN: APPLICATION DETAILS ===================== */
+  function detailRow(container, label, value){
+    var row = document.createElement('div');
+    row.className = 'detail-row';
+    var labelEl = document.createElement('strong');
+    labelEl.textContent = label;
+    var valueEl = document.createElement('span');
+    valueEl.textContent = value || '—';
+    row.appendChild(labelEl);
+    row.appendChild(valueEl);
+    container.appendChild(row);
+  }
+
+  function detailSection(container, title, rows){
+    var heading = document.createElement('h4');
+    heading.className = 'detail-section-title';
+    heading.textContent = title;
+    container.appendChild(heading);
+    rows.forEach(function(row){ detailRow(container, row[0], row[1]); });
+  }
+
+  var selectedApplication = null;
+
+  async function showApplicationDetails(applicationId){
+    var modal = document.getElementById('applicationDetailsModal');
+    var body = document.getElementById('applicationDetailsBody');
+    var subtitle = document.getElementById('applicationDetailsSubtitle');
+    var titleEl = document.getElementById('applicationDetailsTitle');
+    body.innerHTML = '';
+    titleEl.textContent = 'Inapakia...';
+    subtitle.textContent = 'ID: ' + applicationId;
+    document.getElementById('inspectorPdfBtn').disabled = true;
+    document.getElementById('adminPdfBtn').disabled = true;
+    modal.classList.add('is-active');
+
+    if (!hasSupabaseConnection()) {
+      selectedApplication = null;
+      titleEl.textContent = 'Hitilafu';
+      detailRow(body, 'Hali', 'Muunganisho wa Supabase haujapatikana.');
+      return;
+    }
+
+    try {
+      var sellerResult = await supabaseClient.from('sellers').select('id, application_id, full_name, phone, registered_at').eq('application_id', applicationId).maybeSingle();
+      if (sellerResult.error) throw sellerResult.error;
+      var seller = sellerResult.data;
+      if (!seller) {
+        selectedApplication = null;
+        titleEl.textContent = 'Haijapatikana';
+        detailRow(body, 'Hali', 'Muuzaji huyu hakupatikana.');
+        return;
+      }
+
+      var appResult = await supabaseClient.from('applications').select('*, application_photos(*), application_responses(*)').eq('seller_id', seller.id).maybeSingle();
+      if (appResult.error) throw appResult.error;
+      var appRow = appResult.data;
+
+      if (!appRow) {
+        selectedApplication = { applicationId: seller.application_id, sellerId: seller.id, fullName: seller.full_name, phone: seller.phone, hasApplication: false };
+        titleEl.textContent = 'Maombi hayajakamilika';
+        subtitle.textContent = 'ID: ' + seller.application_id;
+        detailRow(body, 'Hali', 'Muuzaji bado hajakamilisha na kutuma fomu hii.');
+        return;
+      }
+
+      var photosRow = unwrapOne(appRow.application_photos);
+      var responseRow = unwrapOne(appRow.application_responses);
+      var mapped = mapDbApplicationToFormShape(appRow);
+      var photos = { front: photosRow && photosRow.front_path, back: photosRow && photosRow.back_path, supporting: photosRow && photosRow.supporting_path };
+      var response = responseRow ? { status: responseRow.status, reason: responseRow.reason, agreedPrice: responseRow.agreed_price } : null;
+
+      selectedApplication = {
+        applicationId: seller.application_id, sellerId: seller.id, fullName: seller.full_name, phone: seller.phone,
+        submittedAt: appRow.submitted_at, data: mapped, photos: photos, response: response, hasApplication: true
+      };
+
+      document.getElementById('inspectorPdfBtn').disabled = false;
+      document.getElementById('adminPdfBtn').disabled = false;
+      titleEl.textContent = mapped.a.fullname || seller.full_name;
+      subtitle.textContent = 'ID ya Maombi: ' + seller.application_id + ' · Imekamilika: ' + formatDateTime(appRow.submitted_at);
+      detailSection(body, 'A. Taarifa za Muuzaji', [['Namba ya simu', mapped.a.phone], ['NIDA', mapped.a.nida], ['Eneo anapoishi', mapped.a.location], ['Tarehe ya kuuza', mapped.a.saledate], ['Sababu ya kuuza', mapped.a.reason]]);
+      detailSection(body, 'B. Utambulisho wa Simu', [['Brand', mapped.b.brand], ['Model', mapped.b.model], ['Model Number', mapped.b.modelnum], ['IMEI 1', mapped.b.imei1], ['IMEI 2', mapped.b.imei2], ['Serial Number', mapped.b.serial], ['Storage', mapped.b.storage], ['Network', mapped.b.network], ['Dual SIM', mapped.b.dualsim]]);
+      detailSection(body, 'C. Hali ya Nje', [['Screen', mapped.c.screen], ['Touch', mapped.c.touch], ['Frame/Body', mapped.c.frame], ['Back Cover', mapped.c.backcover], ['Camera Glass', mapped.c.camglass], ['Camera Lens', mapped.c.camlens], ['Buttons', mapped.c.buttons], ['Charging Port', mapped.c.chargeport], ['SIM Tray', mapped.c.simtray], ['Speaker', mapped.c.speaker], ['Microphone', mapped.c.mic]]);
+      detailSection(body, 'D. Battery', [['Battery Health', mapped.d.health !== null && mapped.d.health !== undefined ? mapped.d.health + '%' : ''], ['Imebadilishwa', mapped.d.replaced], ['Inachaji vizuri', mapped.d.chargesok], ['Inapata joto', mapped.d.overheats], ['Inashuka haraka', mapped.d.drainsfast]]);
+      detailSection(body, 'F. Camera', [['Front Camera', mapped.f.front], ['Main Camera', mapped.f.main], ['Ultrawide', mapped.f.ultrawide], ['Telephoto', mapped.f.telephoto], ['Flash', mapped.f.flash], ['Video Recording', mapped.f.video], ['Camera Focus', mapped.f.focus]]);
+      detailSection(body, 'G. Mfumo & Security', [['Inawaka vizuri', mapped.g.powers], ['Fingerprint', mapped.g.fingerprint], ['Face ID/Face Unlock', mapped.g.faceid], ['Wi-Fi', mapped.g.wifi], ['Bluetooth', mapped.g.bt], ['GPS', mapped.g.gps], ['Mobile Network', mapped.g.network], ['Calls', mapped.g.calls], ['SMS', mapped.g.sms], ['Internet/Data', mapped.g.internet]]);
+      detailSection(body, 'H. Historia ya Simu', [['Imefunguliwa', mapped.h.opened], ['Imetengenezwa', mapped.h.repaired], ['Screen ilibadilishwa', mapped.h.screenchanged], ['Battery ilibadilishwa', mapped.h.batterychanged], ['Imeanguka sana', mapped.h.dropped], ['Imeingia maji', mapped.h.water], ['Spare parts', mapped.h.spareparts]]);
+      detailSection(body, 'I–K. Vifaa, Bei & Uthibitisho', [['Receipt', mapped.i.receipt ? 'Ndiyo' : 'Hapana'], ['Warranty Card', mapped.i.warranty ? 'Ndiyo' : 'Hapana'], ['Purchase Invoice', mapped.i.invoice ? 'Ndiyo' : 'Hapana'], ['Other', mapped.i.other], ['Picha ya warranty/receipt', photos.supporting ? 'Imeambatanishwa' : 'Haijaambatanishwa'], ['Bei anayotaka', mapped.k.asking ? formatMoneyTZS(mapped.k.asking) : ''], ['Sahihi ya muuzaji', mapped.conf.signature], ['Tarehe ya uthibitisho', mapped.conf.date]]);
+      if (response) {
+        detailSection(body, 'Uamuzi wa Admin', [['Hali', response.status === 'approved' ? 'Imekubaliwa' : 'Imekataliwa'], ['Sababu', response.reason], ['Bei Iliyokubaliwa', response.agreedPrice ? formatMoneyTZS(response.agreedPrice) : '—']]);
+      }
+    } catch (error) {
+      console.error('Fetch application details error:', error);
+      selectedApplication = null;
+      titleEl.textContent = 'Hitilafu';
+      body.innerHTML = '';
+      detailRow(body, 'Hali', 'Imeshindikana kupakia maelezo ya maombi. Jaribu tena.');
+    }
+  }
+
+  function closeApplicationDetails(){ document.getElementById('applicationDetailsModal').classList.remove('is-active'); }
+
+  async function downloadInspectorPdf(){
+    if (!selectedApplication || !selectedApplication.hasApplication) return;
+    var btn = document.getElementById('inspectorPdfBtn');
+    var original = btn.textContent;
+    btn.disabled = true; btn.textContent = 'Inatengeneza...';
+    try {
+      var doc = await generateApplicationPDF(selectedApplication, { audience: 'inspector' });
+      doc.save(pdfFilename(selectedApplication.applicationId, 'inspector'));
+    } catch (error) {
+      console.error('Inspector PDF error:', error);
+      window.alert('Imeshindikana kutengeneza PDF ya mkaguzi. Jaribu tena.');
+    } finally {
+      btn.disabled = false; btn.textContent = original;
+    }
+  }
+
+  async function downloadAdminPdf(){
+    if (!selectedApplication || !selectedApplication.hasApplication) return;
+    var btn = document.getElementById('adminPdfBtn');
+    var original = btn.textContent;
+    btn.disabled = true; btn.textContent = 'Inatengeneza...';
+    try {
+      var doc = await generateApplicationPDF(selectedApplication, { audience: 'admin' });
+      doc.save(pdfFilename(selectedApplication.applicationId, 'admin'));
+    } catch (error) {
+      console.error('Admin PDF error:', error);
+      window.alert('Imeshindikana kutengeneza PDF ya admin. Jaribu tena.');
+    } finally {
+      btn.disabled = false; btn.textContent = original;
+    }
+  }
+
+  /* ===================== ADMIN: SEARCH / SORT / EXPORT / DELETE ===================== */
   function filterAdminTable(which){
     var input = document.getElementById(which + 'Search');
     var query = input ? input.value.trim().toLocaleLowerCase() : '';
@@ -2930,19 +3272,20 @@
     var state = adminTableSort[which];
     state.direction = state.key === key && state.direction === 'asc' ? 'desc' : 'asc';
     state.key = key;
-    renderAdminTables();
+    if (adminDataCache) { renderAdminTablesFromCache(); } else { renderAdminTables(); }
   }
 
   function exportAdminTable(which){
-    var rows = which === 'applicants' ? adminOverviewCache : adminOverviewCache.filter(function(r){ return r.application_id_pk; });
-    var headers = which === 'applicants'
-      ? ['ID ya Maombi', 'Jina Kamili', 'Namba ya Simu', 'Status', 'Majibu']
-      : ['ID ya Maombi', 'Jina Kamili', 'Namba ya Simu', 'Tarehe ya Kutuma'];
-    var values = rows.map(function(row){
-      return which === 'applicants'
-        ? [row.application_id, row.full_name, row.phone, row.login_status, row.response_status ? (row.response_status === 'approved' ? 'Imekubaliwa' : 'Imekataliwa') : 'Hajajibiwa']
-        : [row.application_id, row.full_name, row.phone, row.submitted_at];
-    });
+    var rows = adminDataCache || [];
+    var headers, values;
+    if (which === 'applicants') {
+      headers = ['ID ya Maombi', 'Jina Kamili', 'Namba ya Simu', 'Status', 'Majibu'];
+      values = rows.map(function(r){ return [r.application_id, r.full_name, r.phone, loginStatusLabel(r.login_status), responseLabel(r.response_status)]; });
+    } else {
+      var submitted = rows.filter(function(r){ return r.submitted_at; });
+      headers = ['ID ya Maombi', 'Jina Kamili', 'Namba ya Simu', 'Tarehe ya Kukamilisha'];
+      values = submitted.map(function(r){ return [r.application_id, r.full_name, r.phone, formatDateTime(r.submitted_at)]; });
+    }
     var csv = [headers].concat(values).map(function(row){ return row.map(function(cell){ return '"' + String(cell || '').replace(/"/g, '""') + '"'; }).join(','); }).join('\n');
     var link = document.createElement('a');
     link.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }));
@@ -2951,27 +3294,32 @@
     URL.revokeObjectURL(link.href);
   }
 
-  /* Irreversible bulk delete against the live database (there is no
-     more browser-only demo data to "reset" — Supabase is the only
-     source of truth). Kept behind a typed confirmation phrase since
-     it can no longer be undone by a page refresh. */
-  async function clearAdminData(){
-    var typed = window.prompt('Hii itafuta WATEJA WOTE na fomu zote KWENYE DATABASE (si kwenye kivinjari tu) na haiwezi kurejeshwa.\nAndika FUTA YOTE kuthibitisha:');
-    if (typed !== 'FUTA YOTE') return;
-    var result = await supabaseClient.from('sellers').delete().neq('id', '00000000-0000-0000-0000-000000000000');
-    if (result.error) { console.error('clearAdminData failed', result.error); window.alert('Imeshindikana kufuta.'); return; }
+  /* This clears only this tab's cached table data and search filters —
+     NOT real seller/application records in Supabase. Wiring the button
+     labelled "kivinjari hiki pekee" (this browser only) to a real mass
+     delete of production data would be destructive and is not what the
+     original browser-only demo behavior meant; see the delivery notes. */
+  function clearAdminData(){
+    if (!window.confirm('Hii itasafisha akiba ya orodha iliyohifadhiwa kwenye kivinjari hiki (si rekodi za database). Endelea?')) return;
+    adminDataCache = null;
     document.getElementById('applicantsSearch').value = '';
     document.getElementById('printedSearch').value = '';
-    await renderAdminTables();
+    renderAdminTables(true);
   }
 
   async function deleteSellerApplication(applicationId){
-    var overview = adminOverviewCache.find(function(item){ return item.application_id === applicationId; });
-    if (!overview) return;
-    if (!window.confirm('Unataka kufuta maombi ya ' + overview.full_name + ' (' + applicationId + ')? Hatua hii haiwezi kurejeshwa.')) return;
-    var result = await supabaseClient.from('sellers').delete().eq('id', overview.seller_id);
-    if (result.error) { console.error('delete seller failed', result.error); window.alert('Imeshindikana kufuta.'); return; }
-    await renderAdminTables();
+    if (!hasSupabaseConnection()) return;
+    var row = (adminDataCache || []).find(function(r){ return r.application_id === applicationId; });
+    var name = row ? row.full_name : applicationId;
+    if (!window.confirm('Unataka kufuta maombi ya ' + name + ' (' + applicationId + ')? Hatua hii haiwezi kurejeshwa.')) return;
+    try {
+      var result = await supabaseClient.from('sellers').delete().eq('application_id', applicationId);
+      if (result.error) throw result.error;
+      await renderAdminTables(true);
+    } catch (error) {
+      console.error('Delete seller error:', error);
+      window.alert('Imeshindikana kufuta rekodi hii. Jaribu tena.');
+    }
   }
 
   function toggleAdminSection(which){
@@ -2986,148 +3334,6 @@
       prnSec.classList.add('is-active'); appSec.classList.remove('is-active');
       prnBtn.classList.add('is-active'); appBtn.classList.remove('is-active');
     }
-  }
-
-  async function renderAdminTables(){
-    var overview = await fetchSellerOverview();
-    adminOverviewCache = overview;
-    var completed = overview.filter(function(r){ return r.application_id_pk; });
-    updateAdminStats(overview, completed);
-
-    var tbody = document.getElementById('applicantsTbody');
-    var emptyNote = document.getElementById('applicantsEmpty');
-    tbody.innerHTML = '';
-    if (overview.length === 0) {
-      emptyNote.style.display = 'block';
-    } else {
-      emptyNote.style.display = 'none';
-      getSortedRows('applicants', overview).forEach(function (a) {
-        var tr = document.createElement('tr');
-        var statusHtml = a.login_status === 'success'
-          ? '<span class="status-cell"><span class="status-icon ok" title="Ameingia">&#10003;</span><span class="status-text">Ameingia</span></span>'
-          : (a.login_status === 'failed'
-            ? '<span class="status-cell"><span class="status-icon no" title="Jaribio limekataa">&#10007;</span><span class="status-text">Haikufaulu</span></span>'
-            : '<span class="status-cell"><span class="status-icon no" style="background:rgba(98,106,124,0.12);color:var(--muted);" title="Bado hajaingia">&#8212;</span><span class="status-text">Anasubiri</span></span>');
-        var applicationId = a.application_id || '—';
-        var responseHtml = !a.response_status
-          ? '<button class="response-button" type="button" onclick="openAdminResponse(\'' + escapeHtml(applicationId) + '\')" ' + (a.application_id_pk ? '' : 'disabled') + '>Hajajibiwa</button>'
-          : (a.response_status === 'approved'
-            ? '<button class="response-button response-approved" type="button" onclick="openAdminResponse(\'' + escapeHtml(applicationId) + '\')">Imekubaliwa</button>'
-            : '<button class="response-button response-rejected" type="button" onclick="openAdminResponse(\'' + escapeHtml(applicationId) + '\')">Imekataliwa</button>');
-        tr.innerHTML = '<td><span class="application-id">' + escapeHtml(applicationId) + '</span></td><td><button class="table-link" type="button" onclick="showApplicationDetails(\'' + escapeHtml(applicationId) + '\')">' + escapeHtml(a.full_name) + '</button></td><td>' + escapeHtml(a.phone) +
-          '</td><td class="muted">—</td><td>' + statusHtml + '</td><td>' + responseHtml + '</td><td><button class="delete-application" type="button" onclick="deleteSellerApplication(\'' + escapeHtml(applicationId) + '\')">Futa</button></td>';
-        tbody.appendChild(tr);
-      });
-    }
-
-    var ptbody = document.getElementById('printedTbody');
-    var pEmpty = document.getElementById('printedEmpty');
-    ptbody.innerHTML = '';
-    if (completed.length === 0) {
-      pEmpty.style.display = 'block';
-    } else {
-      pEmpty.style.display = 'none';
-      getSortedRows('printed', completed).forEach(function (c) {
-        var tr = document.createElement('tr');
-        tr.innerHTML = '<td><span class="application-id">' + escapeHtml(c.application_id || '—') + '</span></td><td><button class="table-link" type="button" onclick="showApplicationDetails(\'' + escapeHtml(c.application_id || '') + '\')">' + escapeHtml(c.full_name) + '</button></td><td>' + escapeHtml(c.phone) + '</td><td>' + escapeHtml(fmtDate(c.submitted_at)) + '</td>';
-        ptbody.appendChild(tr);
-      });
-    }
-    updateSortCarets('applicants');
-    updateSortCarets('printed');
-    filterAdminTable('applicants');
-    filterAdminTable('printed');
-  }
-
-  function detailRow(container, label, value){
-    var row = document.createElement('div');
-    row.className = 'detail-row';
-    var labelEl = document.createElement('strong');
-    labelEl.textContent = label;
-    var valueEl = document.createElement('span');
-    valueEl.textContent = value || '—';
-    row.appendChild(labelEl);
-    row.appendChild(valueEl);
-    container.appendChild(row);
-  }
-
-  function detailSection(container, title, rows){
-    var heading = document.createElement('h4');
-    heading.className = 'detail-section-title';
-    heading.textContent = title;
-    container.appendChild(heading);
-    rows.forEach(function(row){ detailRow(container, row[0], row[1]); });
-  }
-
-  var selectedApplication = null; // { row, humanId, photos (signed URLs), response }
-
-  async function showApplicationDetails(applicationId){
-    var modal = document.getElementById('applicationDetailsModal');
-    var body = document.getElementById('applicationDetailsBody');
-    var subtitle = document.getElementById('applicationDetailsSubtitle');
-    body.innerHTML = '';
-    document.getElementById('applicationDetailsTitle').textContent = 'Inapakia...';
-    document.getElementById('inspectorPdfBtn').disabled = true;
-    document.getElementById('adminPdfBtn').disabled = true;
-    modal.classList.add('is-active');
-
-    var full = await fetchFullApplication(applicationId);
-    var app = full && full.applications;
-
-    if (!app) {
-      selectedApplication = null;
-      document.getElementById('applicationDetailsTitle').textContent = 'Maombi hayajakamilika';
-      subtitle.textContent = 'ID: ' + (applicationId || 'Haijapatikana');
-      detailRow(body, 'Hali', 'Muuzaji bado hajakamilisha na kutuma fomu hii.');
-      return;
-    }
-
-    var photosRow = app.application_photos;
-    var response = app.application_responses;
-    var photos = {
-      front: photosRow ? await signedPhotoUrl(photosRow.front_path) : null,
-      back: photosRow ? await signedPhotoUrl(photosRow.back_path) : null,
-      supporting: photosRow && photosRow.supporting_path ? await signedPhotoUrl(photosRow.supporting_path) : null
-    };
-
-    selectedApplication = { row: app, humanId: applicationId, photos: photos, response: response };
-    document.getElementById('inspectorPdfBtn').disabled = false;
-    document.getElementById('adminPdfBtn').disabled = false;
-
-    document.getElementById('applicationDetailsTitle').textContent = app.a_full_name;
-    subtitle.textContent = 'ID ya Maombi: ' + applicationId + ' · Imetumwa: ' + fmtDate(app.submitted_at);
-    detailSection(body, 'A. Taarifa za Muuzaji', [['Namba ya simu', app.a_phone], ['NIDA', app.a_nida], ['Eneo anapoishi', app.a_location], ['Tarehe ya kuuza', app.a_sale_date], ['Sababu ya kuuza', app.a_reason]]);
-    detailSection(body, 'B. Utambulisho wa Simu', [['Brand', app.b_brand], ['Model', app.b_model], ['Model Number', app.b_model_number], ['IMEI 1', app.b_imei1], ['IMEI 2', app.b_imei2], ['Serial Number', app.b_serial], ['Storage', app.b_storage], ['Network', app.b_network], ['Dual SIM', app.b_dual_sim]]);
-    detailSection(body, 'C. Hali ya Nje', [['Screen', app.c_screen], ['Touch', app.c_touch], ['Frame/Body', app.c_frame], ['Back Cover', app.c_backcover], ['Camera Glass', app.c_camera_glass], ['Camera Lens', app.c_camera_lens], ['Buttons', app.c_buttons], ['Charging Port', app.c_charging_port], ['SIM Tray', app.c_sim_tray], ['Speaker', app.c_speaker], ['Microphone', app.c_microphone]]);
-    detailSection(body, 'D. Battery', [['Battery Health', app.d_battery_health != null ? app.d_battery_health + '%' : ''], ['Imebadilishwa', app.d_replaced], ['Inachaji vizuri', app.d_charges_ok], ['Inapata joto', app.d_overheats], ['Inashuka haraka', app.d_drains_fast]]);
-    detailSection(body, 'F. Camera', [['Front Camera', app.f_front], ['Main Camera', app.f_main], ['Ultrawide', app.f_ultrawide], ['Telephoto', app.f_telephoto], ['Flash', app.f_flash], ['Video Recording', app.f_video], ['Camera Focus', app.f_focus]]);
-    detailSection(body, 'G. Mfumo & Security', [['Inawaka vizuri', app.g_powers_on], ['Fingerprint', app.g_fingerprint], ['Face ID/Face Unlock', app.g_face_id], ['Wi-Fi', app.g_wifi], ['Bluetooth', app.g_bluetooth], ['GPS', app.g_gps], ['Mobile Network', app.g_mobile_network], ['Calls', app.g_calls], ['SMS', app.g_sms], ['Internet/Data', app.g_internet]]);
-    detailSection(body, 'H. Historia ya Simu', [['Imefunguliwa', app.h_opened], ['Imetengenezwa', app.h_repaired], ['Screen ilibadilishwa', app.h_screen_changed], ['Battery ilibadilishwa', app.h_battery_changed], ['Imeanguka sana', app.h_dropped_hard], ['Imeingia maji', app.h_water_damage], ['Spare parts', app.h_spare_parts]]);
-    detailSection(body, 'I–K. Vifaa, Bei & Uthibitisho', [['Receipt', app.i_has_receipt ? 'Ndiyo' : 'Hapana'], ['Warranty Card', app.i_has_warranty ? 'Ndiyo' : 'Hapana'], ['Purchase Invoice', app.i_has_invoice ? 'Ndiyo' : 'Hapana'], ['Other', app.i_other], ['Picha ya warranty/receipt', photos.supporting ? 'Imeambatanishwa' : 'Haijaambatanishwa'], ['Bei anayotaka', fmtMoney(app.k_asking_price)], ['Sahihi ya muuzaji', app.conf_signature], ['Tarehe ya uthibitisho', app.conf_date]]);
-  }
-
-  function closeApplicationDetails(){ document.getElementById('applicationDetailsModal').classList.remove('is-active'); }
-
-  async function downloadInspectorPdf(){
-    if (!selectedApplication) return;
-    var photosForPdf = {
-      front: await urlToDataUrl(selectedApplication.photos.front),
-      back: await urlToDataUrl(selectedApplication.photos.back),
-      supporting: await urlToDataUrl(selectedApplication.photos.supporting)
-    };
-    var doc = await buildApplicationPdf(selectedApplication.row, selectedApplication.humanId, photosForPdf, selectedApplication.response, { audience: 'inspector' });
-    doc.save('SimuPesa-' + selectedApplication.humanId + '-Mkaguzi.pdf');
-  }
-
-  async function downloadAdminPdf(){
-    if (!selectedApplication) return;
-    var photosForPdf = {
-      front: await urlToDataUrl(selectedApplication.photos.front),
-      back: await urlToDataUrl(selectedApplication.photos.back),
-      supporting: await urlToDataUrl(selectedApplication.photos.supporting)
-    };
-    var doc = await buildApplicationPdf(selectedApplication.row, selectedApplication.humanId, photosForPdf, selectedApplication.response, { audience: 'admin' });
-    doc.save('SimuPesa-' + selectedApplication.humanId + '.pdf');
   }
 
   /* ===================== INITIAL ROUTE ===================== */
