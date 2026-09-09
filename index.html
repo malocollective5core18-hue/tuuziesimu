@@ -2024,6 +2024,23 @@
 
   var DB_KEY_APPLICANTS = 'simupesa_applicants';
   var DB_KEY_COMPLETED  = 'simupesa_completed';
+  var SIMUPESA_STORAGE_RESET_VERSION = '2026-09-supabase-cutover';
+
+  /* One-time cutover: remove the old browser-only demo records so the
+     dashboard starts clean when Supabase becomes the source of truth. */
+  function clearLegacySimuPesaStorage(){
+    try {
+      if (localStorage.getItem('simupesa_storage_reset_version') === SIMUPESA_STORAGE_RESET_VERSION) return;
+      localStorage.removeItem(DB_KEY_APPLICANTS);
+      localStorage.removeItem(DB_KEY_COMPLETED);
+      sessionStorage.removeItem('simupesa_admin_logged_in');
+      localStorage.setItem('simupesa_storage_reset_version', SIMUPESA_STORAGE_RESET_VERSION);
+    } catch (error) {
+      console.warn('Could not clear legacy SimuPesa browser data:', error);
+    }
+  }
+
+  clearLegacySimuPesaStorage();
 
   function loadApplicants(){
     try { return JSON.parse(localStorage.getItem(DB_KEY_APPLICANTS)) || []; }
