@@ -9,6 +9,7 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Manrope:wght@300;400;500;600&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 
 <style>
   /* =====================================================
@@ -483,12 +484,12 @@
 
   .pillar-card p { font-size: 13.5px; color: var(--muted); margin: 0; }
 
-  .pillar-grid > *:nth-child(2) { transition-delay: 0.12s; margin-top: 90px;}
+  .pillar-grid > *:nth-child(2) { transition-delay: 0.12s;}
   .pillar-grid > *:nth-child(3) { transition-delay: 0.24s; }
 
   @media (max-width: 760px) {
     .pillar-grid { grid-template-columns: 1fr; }
-    .pillar-grid .reveal-left, .pillar-grid .reveal-right { transform: translateY(36px); }
+    .pillar-grid .reveal-left, .pillar-grid .reveal-right { transform: translateY(36px); margin-bottom: 90px;}
   }
 
   /* ===================== BRAND MARQUEE ===================== */
@@ -755,7 +756,7 @@
     display: inline-flex;
     align-items: center;
     gap: 6px;
-    font-size: 12.5px;
+    font-size:0.59rem;
     color: var(--text);
     background: rgba(255,255,255,0.5);
     border: 1px solid var(--line);
@@ -868,6 +869,8 @@
     transition: border-color 0.2s ease;
     position: relative;
     overflow: hidden;
+    color: var(--text);
+    font: inherit;
   }
   .photo-slot:hover { border-color: var(--teal); }
   .photo-slot.has-photo { border-style: solid; border-color: var(--teal); }
@@ -881,6 +884,11 @@
   }
   .photo-slot.has-photo img { display: inline-block; }
   .photo-slot.has-photo .ph-icon { display: none; }
+  .photo-file-input { display: none; }
+  .photo-source-card { max-width: 360px; text-align: center; }
+  .photo-source-card .app-btn-row { flex-direction: column; align-items: stretch; margin-top: 20px; }
+  .photo-source-card .btn { width: 100%; }
+  button:disabled { opacity: 0.45; cursor: not-allowed; }
 
   .form-submit-bar {
     position: sticky;
@@ -914,6 +922,17 @@
   .modal-card h3 { font-size: 19px; }
   .modal-card p { font-size: 13.5px; color: var(--muted); margin-top: 10px; }
   .modal-card .app-btn-row { justify-content: center; }
+  .submission-success-card { text-align: center; border-color: rgba(18,138,114,0.45); background: rgba(234,250,245,0.92); }
+  .success-spinner {
+    width: 42px; height: 42px; margin: 0 auto 14px;
+    border: 4px solid rgba(18,138,114,0.20); border-top-color: var(--teal);
+    border-radius: 50%; animation: success-spin 0.85s linear infinite;
+  }
+  .submission-success-card h3 { color: var(--teal); font-size: 22px; }
+  .success-contact { margin: 18px 0 4px; padding-top: 15px; border-top: 1px solid rgba(18,138,114,0.20); }
+  .success-contact strong { display: block; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.4px; }
+  .success-contact a { display: inline-block; margin: 6px 5px 0; color: var(--teal); font-family: var(--display); font-weight: 600; text-decoration: none; }
+  @keyframes success-spin { to { transform: rotate(360deg); } }
 
   /* ===================== ADMIN ===================== */
   .admin-shell { max-width: 900px; margin: 0 auto; }
@@ -941,7 +960,7 @@
     display: flex;
     align-items: center;
     gap: 14px;
-    padding: 18px;
+    padding: 2px;
     transition: transform 0.25s ease, box-shadow 0.25s ease;
   }
   .stat-card:hover { transform: translateY(-3px); }
@@ -978,6 +997,9 @@
     color: var(--teal);
     margin-top: 6px;
   }
+  .passkey-actions { display: flex; justify-content: center; margin-top: 12px; }
+  .passkey-copy { border: 1px solid rgba(18,138,114,0.35); background: rgba(255,255,255,0.7); color: var(--teal); }
+  .passkey-copy:hover { border-color: var(--teal); }
 
   .admin-toggle-row { display: flex; gap: 10px; flex-wrap: wrap; margin: 26px 0 14px; }
   .admin-toggle-row button {
@@ -1077,6 +1099,31 @@
   .status-icon.no { background: rgba(179,47,47,0.12); color: #b3312f; }
   .status-cell { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; }
   .status-text { color: var(--muted); }
+  .table-link { border: 0; padding: 0; background: none; color: var(--teal); font: inherit; font-weight: 600; cursor: pointer; text-align: left; }
+  .table-link:hover { text-decoration: underline; }
+  .application-id { font-family: var(--display); color: var(--gold); font-size: 12px; letter-spacing: 0.25px; }
+  .response-button { border: 0; background: none; padding: 0; color: var(--teal); font: inherit; font-weight: 600; cursor: pointer; }
+  .response-button:hover { text-decoration: underline; }
+  .response-pending { color: var(--muted); font-size: 12px; }
+  .response-approved { color: var(--teal); font-weight: 600; font-size: 12px; }
+  .response-rejected { color: #b3312f; font-weight: 600; font-size: 12px; }
+  .seller-response-card { display: none; margin: 0 0 20px; padding: 18px 20px; border-radius: 16px; border: 1px solid rgba(18,138,114,0.32); background: rgba(234,250,245,0.85); }
+  .seller-response-card.is-active { display: block; }
+  .seller-response-card.is-rejected { border-color: rgba(179,47,47,0.28); background: rgba(255,242,242,0.86); }
+  .seller-response-card h3 { color: var(--teal); font-size: 18px; }
+  .seller-response-card.is-rejected h3 { color: #b3312f; }
+  .seller-response-card p { margin: 5px 0 0; font-size: 13px; color: var(--text); }
+  .decision-choice { width: 100%; border: 1px solid var(--line); border-radius: 13px; padding: 15px; background: rgba(255,255,255,0.58); font: inherit; font-weight: 600; cursor: pointer; }
+  .decision-choice.approve { color: var(--teal); border-color: rgba(18,138,114,0.35); }
+  .decision-choice.reject { color: #b3312f; border-color: rgba(179,47,47,0.30); }
+  .application-details { max-width: 740px; text-align: left; }
+  .application-details h3 { margin-bottom: 4px; }
+  .detail-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 18px; margin: 18px 0; }
+  .detail-row { border-bottom: 1px solid var(--line); padding: 7px 0; }
+  .detail-row strong { display: block; color: var(--muted); font-size: 11px; font-weight: 600; letter-spacing: 0.3px; text-transform: uppercase; }
+  .detail-row span { display: block; font-size: 13px; overflow-wrap: anywhere; }
+  .detail-section-title { grid-column: 1 / -1; margin: 12px 0 -2px; font-family: var(--display); font-size: 15px; color: var(--teal); }
+  @media (max-width: 560px) { .detail-grid { grid-template-columns: 1fr; } }
   .empty-note { color: var(--muted); font-size: 13px; padding: 22px 4px; text-align: center; }
 
   /* ---- Data management (danger zone) ---- */
@@ -1342,12 +1389,20 @@
 <div id="formView" class="view">
   <div class="app-topbar">
     <button class="back-link" onclick="confirmLeaveForm()">&larr; Rudi</button>
-    <span class="app-title" id="formTopbarName">Fomu ya Kuuza Simu</span>
+    <span class="app-title" id="formTopbarName">Fomu ya Kuuza Simu Used</span>
     <span></span>
   </div>
   <div class="app-view">
     <div class="form-shell">
-      <p class="form-progress">Jaza taarifa zote kwa usahihi. Sehemu zenye <span style="color:#b3312f;">*</span> ni za lazima.</p>
+      <p class="form-progress">Fomu ya kuuza simu used. Jaza taarifa zote kwa usahihi; sehemu zenye <span style="color:#b3312f;">*</span> ni za lazima.</p>
+      <div class="passkey-display is-active" style="margin:0 0 20px;">
+        <span style="font-size:12.5px;color:var(--muted);">Namba yako ya maombi</span>
+        <div class="code" id="sellerApplicationId">—</div>
+      </div>
+      <div class="seller-response-card" id="sellerResponseCard">
+        <h3 id="sellerResponseTitle">Majibu ya Maombi</h3>
+        <p id="sellerResponseMessage"></p>
+      </div>
 
       <form id="sellForm" autocomplete="off">
 
@@ -1370,10 +1425,10 @@
           <div class="field-grid">
             <div class="field"><label>Brand *</label><input type="text" id="b_brand" required></div>
             <div class="field"><label>Model *</label><input type="text" id="b_model" required></div>
-            <div class="field"><label>Model Number</label><input type="text" id="b_modelnum"></div>
-            <div class="field"><label>IMEI 1 *</label><input type="text" id="b_imei1" required></div>
-            <div class="field"><label>IMEI 2</label><input type="text" id="b_imei2"></div>
-            <div class="field"><label>Serial Number</label><input type="text" id="b_serial"></div>
+            <div class="field"><label>Model Number (Hiari)</label><input type="text" id="b_modelnum"></div>
+            <div class="field"><label>IMEI 1 (Hiari)</label><input type="text" id="b_imei1"></div>
+            <div class="field"><label>IMEI 2 (Hiari)</label><input type="text" id="b_imei2"></div>
+            <div class="field"><label>Serial Number (Hiari)</label><input type="text" id="b_serial"></div>
             <div class="field">
               <label>Storage *</label>
               <select id="b_storage" required>
@@ -1642,7 +1697,7 @@
         </div>
 
         <div class="form-section glass-panel">
-          <h2><span class="letter">I</span>Vifaa Vinavyoambatana</h2>
+          <h2><span class="letter">I</span>Vifaa Vinavyoambatana <span style="font-size:13px;font-family:var(--body);font-weight:400;color:var(--muted);">(Hiari)</span></h2>
           <hr class="rule">
           <div class="radio-group">
             <label><input type="checkbox" id="i_receipt"> Receipt</label>
@@ -1650,6 +1705,13 @@
             <label><input type="checkbox" id="i_invoice"> Purchase Invoice</label>
           </div>
           <div class="field"><label>Other</label><input type="text" id="i_other"></div>
+          <button class="photo-slot" id="photoSupportingSlot" type="button" onclick="openPhotoPicker('supporting')" style="width:100%;margin-top:12px;">
+            <div class="ph-icon">&#128196;</div>
+            <img id="photoSupportingPreview" alt="Picha ya warranty, receipt au invoice">
+            <div class="ph-label">Picha ya warranty / receipt / invoice (Hiari)</div>
+          </button>
+          <input class="photo-file-input" type="file" id="photoSupportingGallery" accept="image/*">
+          <input class="photo-file-input" type="file" id="photoSupportingCamera" accept="image/*" capture="environment">
         </div>
 
         <div class="form-section glass-panel">
@@ -1657,92 +1719,28 @@
           <hr class="rule">
           <p class="sub" style="margin-top:0;">Piga picha wazi ya mbele na nyuma ya simu.</p>
           <div class="photo-upload">
-            <label class="photo-slot" id="photoFrontSlot">
-              <input type="file" id="photoFront" accept="image/*" capture="environment">
+            <button class="photo-slot" id="photoFrontSlot" type="button" onclick="openPhotoPicker('front')">
               <div class="ph-icon">&#128247;</div>
               <img id="photoFrontPreview" alt="Mbele ya simu">
               <div class="ph-label">Mbele ya simu *</div>
-            </label>
-            <label class="photo-slot" id="photoBackSlot">
-              <input type="file" id="photoBack" accept="image/*" capture="environment">
+            </button>
+            <button class="photo-slot" id="photoBackSlot" type="button" onclick="openPhotoPicker('back')">
               <div class="ph-icon">&#128247;</div>
               <img id="photoBackPreview" alt="Nyuma ya simu">
               <div class="ph-label">Nyuma ya simu *</div>
-            </label>
+            </button>
           </div>
+          <input class="photo-file-input" type="file" id="photoFrontGallery" accept="image/*">
+          <input class="photo-file-input" type="file" id="photoFrontCamera" accept="image/*" capture="environment">
+          <input class="photo-file-input" type="file" id="photoBackGallery" accept="image/*">
+          <input class="photo-file-input" type="file" id="photoBackCamera" accept="image/*" capture="environment">
         </div>
 
         <div class="form-section glass-panel">
           <h2><span class="letter">K</span>Bei</h2>
           <hr class="rule">
-          <div class="field-grid">
-            <div class="field"><label>Bei anayotaka muuzaji (TZS) *</label><input type="number" id="k_askingprice" required></div>
-            <div class="field"><label>Bei iliyokubaliwa (TZS)</label><input type="number" id="k_agreedprice"></div>
-          </div>
-        </div>
-
-        <div class="form-section glass-panel">
-          <h2><span class="letter">L</span>Ukaguzi</h2>
-          <hr class="rule">
-          <div class="check-row">
-        <span class="row-label">IMEI imehakikiwa</span>
-        <div class="radio-group"><label><input type="radio" name="l_imeichecked" value="ndiyo"> Ndiyo</label>
-<label><input type="radio" name="l_imeichecked" value="hapana"> Hapana</label>
-</div>
-      </div>
-<div class="check-row">
-        <span class="row-label">IMEI ya simu = IMEI ya box</span>
-        <div class="radio-group"><label><input type="radio" name="l_imeimatch" value="ndiyo"> Ndiyo</label>
-<label><input type="radio" name="l_imeimatch" value="hapana"> Hapana</label>
-</div>
-      </div>
-<div class="check-row">
-        <span class="row-label">Warranty card imehakikiwa</span>
-        <div class="radio-group"><label><input type="radio" name="l_warrantychecked" value="ndiyo"> Ndiyo</label>
-<label><input type="radio" name="l_warrantychecked" value="hapana"> Hapana</label>
-</div>
-      </div>
-<div class="check-row">
-        <span class="row-label">Ownership imehakikiwa</span>
-        <div class="radio-group"><label><input type="radio" name="l_ownershipchecked" value="ndiyo"> Ndiyo</label>
-<label><input type="radio" name="l_ownershipchecked" value="hapana"> Hapana</label>
-</div>
-      </div>
-<div class="check-row">
-        <span class="row-label">Simu ina Google/iCloud/Samsung account?</span>
-        <div class="radio-group"><label><input type="radio" name="l_hasaccount" value="hapana"> Hapana</label>
-<label><input type="radio" name="l_hasaccount" value="ndiyo"> Ndiyo</label>
-</div>
-      </div>
-<div class="check-row">
-        <span class="row-label">Account zote zimeondolewa</span>
-        <div class="radio-group"><label><input type="radio" name="l_accountsremoved" value="ndiyo"> Ndiyo</label>
-<label><input type="radio" name="l_accountsremoved" value="hapana"> Hapana</label>
-</div>
-      </div>
-<div class="check-row">
-        <span class="row-label">Simu ime-reset</span>
-        <div class="radio-group"><label><input type="radio" name="l_reset" value="ndiyo"> Ndiyo</label>
-<label><input type="radio" name="l_reset" value="hapana"> Hapana</label>
-</div>
-      </div>
-<div class="check-row">
-        <span class="row-label">Kuna dalili za wizi/fraud</span>
-        <div class="radio-group"><label><input type="radio" name="l_fraud" value="hapana"> Hapana</label>
-<label><input type="radio" name="l_fraud" value="ndiyo"> Ndiyo</label>
-</div>
-      </div>
-          <div class="star-row" style="margin-top:14px;">
-            <label><input type="radio" name="l_overall" value="A">A</label>
-            <label><input type="radio" name="l_overall" value="B">B</label>
-            <label><input type="radio" name="l_overall" value="C">C</label>
-            <label><input type="radio" name="l_overall" value="D">D</label>
-          </div>
-          <div class="field"><label>Maoni ya mkaguzi</label><textarea id="l_comments" rows="3"></textarea></div>
-          <div class="field-grid">
-            <div class="field"><label>Jina la Mkaguzi</label><input type="text" id="l_inspector"></div>
-            <div class="field"><label>Tarehe</label><input type="date" id="l_inspectiondate"></div>
-          </div>
+          <div class="field"><label>Bei anayotaka muuzaji (TZS) *</label><input type="number" id="k_askingprice" min="0" inputmode="numeric" required></div>
+          <p class="sub" style="margin:12px 0 0;">Simu itauzwa kwa bei ya makubaliano kati ya muuzaji na mnunuzi.</p>
         </div>
 
         <div class="form-section glass-panel">
@@ -1779,13 +1777,62 @@
 
 <!-- ============ SUCCESS MODAL ============ -->
 <div id="successModal" class="modal-overlay">
-  <div class="modal-card glass-panel">
-    <h3>Imekamilika &#10003;</h3>
+  <div class="modal-card glass-panel submission-success-card">
+    <div class="success-spinner" aria-label="Inachakata maombi"></div>
+    <h3>Maombi yako yametumwa</h3>
+    <p>Yataanza kufanyiwa kazi hivi punde.</p>
     <p id="successMessage">PDF imepakuliwa. Fungua chaguo la kushea ulilopewa na uchague WhatsApp kutuma kwa admin.</p>
+    <div class="success-contact">
+      <strong>Kwa mawasiliano zaidi, wasiliana nasi</strong>
+      <a href="tel:+255718122255">+255 718 122 255</a>
+      <a href="tel:+255617757020">+255 617 757 020</a>
+    </div>
     <div class="app-btn-row">
       <a class="btn" id="waFallbackLink" href="https://wa.me/qr/QCXHWFGUIQ74D1" target="_blank" rel="noopener" style="text-decoration:none;">Fungua WhatsApp</a>
       <button class="btn ghost" style="border:none;cursor:pointer;" onclick="closeSuccessModal()">Funga</button>
     </div>
+  </div>
+</div>
+
+<!-- ============ PHOTO SOURCE PICKER ============ -->
+<div id="photoSourceModal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="photoSourceTitle">
+  <div class="modal-card glass-panel photo-source-card">
+    <h3 id="photoSourceTitle">Ongeza picha</h3>
+    <p>Chagua namna ya kuweka picha ya simu.</p>
+    <div class="app-btn-row">
+      <button class="btn" type="button" style="border:none;cursor:pointer;" onclick="selectPhotoSource('gallery')">Chagua kutoka gallery</button>
+      <button class="btn ghost" type="button" style="border:none;cursor:pointer;" onclick="selectPhotoSource('camera')">Piga picha kwa camera</button>
+      <button class="logout-link" type="button" onclick="closePhotoPicker()">Ghairi</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============ APPLICATION DETAILS (admin) ============ -->
+<div id="applicationDetailsModal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="applicationDetailsTitle">
+  <div class="modal-card glass-panel application-details">
+    <h3 id="applicationDetailsTitle">Maelezo ya Maombi</h3>
+    <p class="sub" id="applicationDetailsSubtitle"></p>
+    <div class="detail-grid" id="applicationDetailsBody"></div>
+    <div class="app-btn-row"><button class="btn ghost" type="button" id="inspectorPdfBtn" style="border:none;cursor:pointer;" onclick="downloadInspectorPdf()">PDF ya Mkaguzi</button><button class="btn" type="button" id="adminPdfBtn" style="border:none;cursor:pointer;" onclick="downloadAdminPdf()">PDF ya Admin</button><button class="btn ghost" type="button" style="border:none;cursor:pointer;" onclick="closeApplicationDetails()">Funga</button></div>
+  </div>
+</div>
+
+<!-- ============ ADMIN RESPONSE ============ -->
+<div id="adminResponseModal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="adminResponseTitle">
+  <div class="modal-card glass-panel">
+    <h3 id="adminResponseTitle">Jibu la maombi</h3>
+    <p id="adminResponseApplicant" class="sub"></p>
+    <div id="responseChoices" class="app-btn-row" style="flex-direction:column;align-items:stretch;">
+      <button class="decision-choice approve" type="button" onclick="chooseResponse('approved')">Imekubaliwa</button>
+      <button class="decision-choice reject" type="button" onclick="chooseResponse('rejected')">Imekataliwa</button>
+    </div>
+    <form id="adminResponseForm" style="display:none;" autocomplete="off">
+      <div class="field"><label id="responseReasonLabel">Sababu ya kukubaliwa</label><textarea id="responseReason" rows="3" required></textarea></div>
+      <div class="field" id="agreedPriceField"><label>Bei iliyokubaliwa (TZS)</label><input type="number" id="responseAgreedPrice" min="0" inputmode="numeric" required></div>
+      <p class="app-error" id="adminResponseError"></p>
+      <div class="app-btn-row"><button class="btn ghost" type="button" style="border:none;cursor:pointer;" onclick="resetResponseModal()">Rudi</button><button class="btn" type="submit" style="border:none;cursor:pointer;">Tuma majibu</button></div>
+    </form>
+    <div class="app-btn-row" id="responseCloseRow"><button class="logout-link" type="button" onclick="closeAdminResponse()">Funga</button></div>
   </div>
 </div>
 
@@ -1854,6 +1901,7 @@
         <div class="passkey-display" id="passkeyDisplay">
           <span style="font-size:12.5px;color:var(--muted);">Tarakimu 6 za muuzaji (mpe namba hii kwa simu/moja kwa moja)</span>
           <div class="code" id="passkeyCode"></div>
+          <div class="passkey-actions"><button class="btn-sm passkey-copy" type="button" id="copyPasskeyBtn" onclick="copyPasskey()">Nakili passkey</button></div>
         </div>
       </div>
 
@@ -1868,7 +1916,7 @@
           <button class="btn ghost btn-sm" type="button" onclick="exportAdminTable('applicants')">Pakua CSV</button>
         </div>
         <div class="admin-table-wrap"><table class="admin-table" id="applicantsTable">
-          <thead><tr><th onclick="sortAdminTable('applicants','fullName')">Jina <span class="sort-caret"></span></th><th onclick="sortAdminTable('applicants','phone')">Namba ya Simu <span class="sort-caret"></span></th><th onclick="sortAdminTable('applicants','passkey')">Passkey <span class="sort-caret"></span></th><th onclick="sortAdminTable('applicants','loginStatus')">Status <span class="sort-caret"></span></th></tr></thead>
+          <thead><tr><th onclick="sortAdminTable('applicants','applicationId')">ID ya Maombi <span class="sort-caret"></span></th><th onclick="sortAdminTable('applicants','fullName')">Jina <span class="sort-caret"></span></th><th onclick="sortAdminTable('applicants','phone')">Namba ya Simu <span class="sort-caret"></span></th><th onclick="sortAdminTable('applicants','passkey')">Passkey <span class="sort-caret"></span></th><th onclick="sortAdminTable('applicants','loginStatus')">Status <span class="sort-caret"></span></th><th>Majibu</th></tr></thead>
           <tbody id="applicantsTbody"></tbody>
         </table></div>
         <p class="empty-note" id="applicantsEmpty" data-default-message="Hakuna waombaji bado." style="display:none;">Hakuna waombaji bado.</p>
@@ -1880,7 +1928,7 @@
           <button class="btn ghost btn-sm" type="button" onclick="exportAdminTable('printed')">Pakua CSV</button>
         </div>
         <div class="admin-table-wrap"><table class="admin-table" id="printedTable">
-          <thead><tr><th onclick="sortAdminTable('printed','fullname')">Jina <span class="sort-caret"></span></th><th onclick="sortAdminTable('printed','phone')">Namba ya Simu <span class="sort-caret"></span></th><th onclick="sortAdminTable('printed','completedAt')">Tarehe ya Kukamilisha <span class="sort-caret"></span></th></tr></thead>
+          <thead><tr><th onclick="sortAdminTable('printed','applicationId')">ID ya Maombi <span class="sort-caret"></span></th><th onclick="sortAdminTable('printed','fullname')">Jina <span class="sort-caret"></span></th><th onclick="sortAdminTable('printed','phone')">Namba ya Simu <span class="sort-caret"></span></th><th onclick="sortAdminTable('printed','completedAt')">Tarehe ya Kukamilisha <span class="sort-caret"></span></th></tr></thead>
           <tbody id="printedTbody"></tbody>
         </table></div>
         <p class="empty-note" id="printedEmpty" data-default-message="Bado hakuna aliyekamilisha fomu." style="display:none;">Bado hakuna aliyekamilisha fomu.</p>
@@ -1890,6 +1938,39 @@
     </div>
   </div>
 </div>
+
+<script>
+  /* Shared backend configuration — same Supabase project and Cloudinary
+     account used by Lomi-main. The anonymous key is safe to expose only
+     when RLS policies and Edge Functions are configured in Supabase. */
+  const SUPABASE_URL = 'https://zzgnrqmaymlaaumjlxzl.supabase.co';
+  const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp6Z25ycW1heW1sYWF1bWpseHpsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODg5NDY4MTcsImV4cCI6MjEwNDUyMjgxN30.fIQKlZ3uMbtBvnBoWQzeCdjOjiPGVz3ndLACOUefbs4';
+  const CLOUDINARY_CLOUD_NAME = 'dcpqnmdas';
+  const CLOUDINARY_UPLOAD_PRESET = 'malocollective';
+  const CLOUDINARY_SIMUPESA_FOLDER = 'simupesa-applications';
+
+  const supabaseClient = window.supabase && window.supabase.createClient
+    ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY, {
+        auth: { persistSession: true, autoRefreshToken: true }
+      })
+    : null;
+
+  function hasSupabaseConnection() {
+    return Boolean(supabaseClient);
+  }
+
+  if (!supabaseClient) {
+    console.warn('Supabase library did not load. SimuPesa will use local data until it is available.');
+  }
+</script>
+
+
+
+
+
+
+
+
 
 <script>
   var nav = document.getElementById('siteNav');
@@ -1943,6 +2024,15 @@
   }
   function saveCompleted(list){ localStorage.setItem(DB_KEY_COMPLETED, JSON.stringify(list)); }
 
+  function generateApplicationId(){
+    var existing = loadApplicants().map(function(a){ return a.applicationId; });
+    var id;
+    do {
+      id = 'SP-' + new Date().getFullYear() + '-' + String(Math.floor(100000 + Math.random() * 900000));
+    } while (existing.indexOf(id) !== -1);
+    return id;
+  }
+
   function normalizePhone(p){ return (p || '').replace(/[^0-9]/g, ''); }
 
   function escapeHtml(str){
@@ -1984,13 +2074,16 @@
     }
 
     match.loginStatus = 'success';
+    if (!match.applicationId) match.applicationId = generateApplicationId();
     saveApplicants(applicants);
     errEl.textContent = '';
     currentApplicant = match;
 
-    document.getElementById('formTopbarName').textContent = match.fullName;
+    document.getElementById('formTopbarName').textContent = 'Fomu ya ' + match.fullName;
+    document.getElementById('sellerApplicationId').textContent = match.applicationId;
     document.getElementById('a_fullname').value = match.fullName;
     document.getElementById('a_phone').value = match.phone;
+    renderSellerResponse(match);
 
     showView('formView');
   });
@@ -2001,9 +2094,28 @@
     }
   }
 
+  function renderSellerResponse(applicant){
+    var card = document.getElementById('sellerResponseCard');
+    var response = applicant.response;
+    card.classList.remove('is-active', 'is-rejected');
+    if (!response) return;
+    var title = document.getElementById('sellerResponseTitle');
+    var message = document.getElementById('sellerResponseMessage');
+    if (response.status === 'approved') {
+      title.textContent = 'Maombi yako yamekubaliwa';
+      message.textContent = (response.reason ? response.reason + '. ' : '') + (response.agreedPrice ? 'Bei iliyokubaliwa ni TZS ' + Number(response.agreedPrice).toLocaleString('en-US') + '.' : '');
+    } else {
+      title.textContent = 'Majibu ya maombi yako';
+      message.textContent = response.reason || 'Maombi yako hayajakubaliwa kwa sasa.';
+      card.classList.add('is-rejected');
+    }
+    card.classList.add('is-active');
+  }
+
   /* ===================== PHOTO UPLOAD (normalize to JPEG via canvas) ===================== */
   var frontPhotoData = null;
   var backPhotoData = null;
+  var supportingPhotoData = null;
 
   function fileToJpegDataUrl(file, maxDim, callback){
     var reader = new FileReader();
@@ -2038,8 +2150,37 @@
     });
   }
 
-  setupPhotoSlot('photoFront', 'photoFrontSlot', 'photoFrontPreview', function (dataUrl) { frontPhotoData = dataUrl; });
-  setupPhotoSlot('photoBack', 'photoBackSlot', 'photoBackPreview', function (dataUrl) { backPhotoData = dataUrl; });
+  var activePhotoSide = null;
+  var photoPickerScrollY = 0;
+
+  function openPhotoPicker(side){
+    activePhotoSide = side;
+    photoPickerScrollY = window.scrollY;
+    document.getElementById('photoSourceTitle').textContent = side === 'front' ? 'Picha ya mbele ya simu' : (side === 'back' ? 'Picha ya nyuma ya simu' : 'Picha ya warranty / receipt');
+    document.getElementById('photoSourceModal').classList.add('is-active');
+  }
+
+  function closePhotoPicker(){ document.getElementById('photoSourceModal').classList.remove('is-active'); }
+
+  function selectPhotoSource(source){
+    if (!activePhotoSide) return;
+    var photoName = activePhotoSide === 'front' ? 'Front' : (activePhotoSide === 'back' ? 'Back' : 'Supporting');
+    var input = document.getElementById('photo' + photoName + (source === 'camera' ? 'Camera' : 'Gallery'));
+    closePhotoPicker();
+    input.value = '';
+    input.click();
+  }
+
+  function keepPhotoFormPosition(){
+    window.setTimeout(function(){ window.scrollTo(0, photoPickerScrollY); }, 50);
+  }
+
+  setupPhotoSlot('photoFrontGallery', 'photoFrontSlot', 'photoFrontPreview', function (dataUrl) { frontPhotoData = dataUrl; keepPhotoFormPosition(); });
+  setupPhotoSlot('photoFrontCamera', 'photoFrontSlot', 'photoFrontPreview', function (dataUrl) { frontPhotoData = dataUrl; keepPhotoFormPosition(); });
+  setupPhotoSlot('photoBackGallery', 'photoBackSlot', 'photoBackPreview', function (dataUrl) { backPhotoData = dataUrl; keepPhotoFormPosition(); });
+  setupPhotoSlot('photoBackCamera', 'photoBackSlot', 'photoBackPreview', function (dataUrl) { backPhotoData = dataUrl; keepPhotoFormPosition(); });
+  setupPhotoSlot('photoSupportingGallery', 'photoSupportingSlot', 'photoSupportingPreview', function (dataUrl) { supportingPhotoData = dataUrl; keepPhotoFormPosition(); });
+  setupPhotoSlot('photoSupportingCamera', 'photoSupportingSlot', 'photoSupportingPreview', function (dataUrl) { supportingPhotoData = dataUrl; keepPhotoFormPosition(); });
 
   /* ===================== FORM COLLECTION ===================== */
   function getVal(id){ var el = document.getElementById(id); return el ? el.value : ''; }
@@ -2051,6 +2192,7 @@
 
   function collectFormData(){
     return {
+      applicationId: currentApplicant ? currentApplicant.applicationId : '',
       a: {
         fullname: getVal('a_fullname'), phone: getVal('a_phone'), nida: getVal('a_nida'),
         location: getVal('a_location'), saledate: getVal('a_saledate'), reason: getVal('a_reason')
@@ -2088,14 +2230,7 @@
         receipt: getChecked('i_receipt'), warranty: getChecked('i_warranty'),
         invoice: getChecked('i_invoice'), other: getVal('i_other')
       },
-      k: { asking: getVal('k_askingprice'), agreed: getVal('k_agreedprice') },
-      l: {
-        imeichecked: getRadio('l_imeichecked'), imeimatch: getRadio('l_imeimatch'),
-        warrantychecked: getRadio('l_warrantychecked'), ownershipchecked: getRadio('l_ownershipchecked'),
-        hasaccount: getRadio('l_hasaccount'), accountsremoved: getRadio('l_accountsremoved'),
-        reset: getRadio('l_reset'), fraud: getRadio('l_fraud'), overall: getRadio('l_overall'),
-        comments: getVal('l_comments'), inspector: getVal('l_inspector'), inspectiondate: getVal('l_inspectiondate')
-      },
+      k: { asking: getVal('k_askingprice') },
       conf: { signature: getVal('conf_signature'), date: getVal('conf_date') }
     };
   }
@@ -2131,15 +2266,19 @@
     return url.indexOf('image/png') !== -1 ? 'PNG' : 'JPEG';
   }
 
-  function generatePDF(data){
+  function generatePDF(data, photos){
+    photos = photos || { front: frontPhotoData, back: backPhotoData, supporting: supportingPhotoData };
     var doc = new jspdf.jsPDF();
     var y = 18;
 
     doc.setFontSize(16);
     doc.setFont(undefined, 'bold');
-    doc.text('FOMU YA KUUZA SIMU — SimuPesa', 14, y);
+    doc.text('FOMU YA KUUZA SIMU USED — SimuPesa', 14, y);
     y += 10;
     doc.setFontSize(10);
+    doc.setFont(undefined, 'normal');
+    doc.text('ID ya Maombi: ' + (data.applicationId || '-'), 14, y);
+    y += 8;
 
     function section(title, rows){
       if (y > 268) { doc.addPage(); y = 18; }
@@ -2193,14 +2332,8 @@
       ['Purchase Invoice', data.i.invoice ? 'Ndiyo' : 'Hapana'], ['Other', data.i.other]
     ]);
     section('K. Bei', [
-      ['Bei anayotaka muuzaji', 'TZS ' + (data.k.asking || '-')], ['Bei iliyokubaliwa', 'TZS ' + (data.k.agreed || '-')]
-    ]);
-    section('L. Ukaguzi', [
-      ['IMEI imehakikiwa', data.l.imeichecked], ['IMEI simu = IMEI box', data.l.imeimatch],
-      ['Warranty imehakikiwa', data.l.warrantychecked], ['Ownership imehakikiwa', data.l.ownershipchecked],
-      ['Ina Google/iCloud/Samsung account', data.l.hasaccount], ['Account zimeondolewa', data.l.accountsremoved],
-      ['Ime-reset', data.l.reset], ['Dalili za wizi/fraud', data.l.fraud], ['Overall Condition', data.l.overall],
-      ['Maoni ya mkaguzi', data.l.comments], ['Jina la Mkaguzi', data.l.inspector], ['Tarehe ya Ukaguzi', data.l.inspectiondate]
+      ['Bei anayotaka muuzaji', 'TZS ' + (data.k.asking || '-')],
+      ['Bei ya mwisho', 'Hukubaliwa kati ya muuzaji na mnunuzi']
     ]);
     section('Uthibitisho wa Muuzaji', [
       ['Sahihi (jina)', data.conf.signature], ['Tarehe', data.conf.date]
@@ -2211,17 +2344,26 @@
     doc.setFont(undefined, 'bold');
     doc.text('Picha za Simu', 14, 18);
     try {
-      doc.addImage(frontPhotoData, imgFormatFromDataUrl(frontPhotoData), 14, 26, 85, 110);
+      doc.addImage(photos.front, imgFormatFromDataUrl(photos.front), 14, 26, 85, 110);
       doc.setFontSize(10);
       doc.setFont(undefined, 'normal');
       doc.text('Mbele ya simu', 14, 142);
     } catch (e) { console.error('front image error', e); }
     try {
-      doc.addImage(backPhotoData, imgFormatFromDataUrl(backPhotoData), 108, 26, 85, 110);
+      doc.addImage(photos.back, imgFormatFromDataUrl(photos.back), 108, 26, 85, 110);
       doc.setFontSize(10);
       doc.setFont(undefined, 'normal');
       doc.text('Nyuma ya simu', 108, 142);
     } catch (e) { console.error('back image error', e); }
+
+    if (photos.supporting) {
+      doc.addPage();
+      doc.setFontSize(12);
+      doc.setFont(undefined, 'bold');
+      doc.text('Picha ya Warranty / Receipt / Invoice', 14, 18);
+      try { doc.addImage(photos.supporting, imgFormatFromDataUrl(photos.supporting), 14, 26, 180, 150); }
+      catch (e) { console.error('supporting image error', e); }
+    }
 
     return doc;
   }
@@ -2235,17 +2377,21 @@
 
     try {
       var data = collectFormData();
-      var doc = generatePDF(data);
+      var photos = { front: frontPhotoData, back: backPhotoData, supporting: supportingPhotoData };
+      var doc = generatePDF(data, photos);
       var safeName = (data.a.fullname || 'muuzaji').trim().replace(/\s+/g, '_');
-      var fileName = 'SimuPesa-Fomu-' + safeName + '.pdf';
+      var fileName = 'SimuPesa-' + data.applicationId + '-' + safeName + '.pdf';
 
       doc.save(fileName);
 
       var completed = loadCompleted();
       completed.push({
+        applicationId: data.applicationId,
         fullname: data.a.fullname,
         phone: data.a.phone,
-        completedAt: new Date().toLocaleString('sw-TZ')
+        completedAt: new Date().toLocaleString('sw-TZ'),
+        applicationData: data,
+        photos: photos
       });
       saveCompleted(completed);
 
@@ -2280,10 +2426,13 @@
     sellForm.reset();
     frontPhotoData = null;
     backPhotoData = null;
+    supportingPhotoData = null;
     document.getElementById('photoFrontSlot').classList.remove('has-photo');
     document.getElementById('photoBackSlot').classList.remove('has-photo');
     document.getElementById('photoFrontPreview').src = '';
     document.getElementById('photoBackPreview').src = '';
+    document.getElementById('photoSupportingSlot').classList.remove('has-photo');
+    document.getElementById('photoSupportingPreview').src = '';
     showView('siteView');
   }
 
@@ -2345,6 +2494,7 @@
     var passkey = generatePasskey();
     applicants.push({
       id: Date.now(),
+      applicationId: generateApplicationId(),
       fullName: fullName,
       phone: phone,
       passkey: passkey,
@@ -2357,6 +2507,74 @@
     document.getElementById('registerForm').reset();
     document.getElementById('passkeyCode').textContent = passkey;
     document.getElementById('passkeyDisplay').classList.add('is-active');
+    renderAdminTables();
+  });
+
+  function copyPasskey(){
+    var code = document.getElementById('passkeyCode').textContent.trim();
+    if (!code) return;
+    var button = document.getElementById('copyPasskeyBtn');
+    function done(){
+      button.textContent = 'Imenakiliwa ✓';
+      setTimeout(function(){ button.textContent = 'Nakili passkey'; }, 1800);
+    }
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(code).then(done).catch(function(){ window.prompt('Nakili passkey hii:', code); });
+    } else {
+      window.prompt('Nakili passkey hii:', code);
+    }
+  }
+
+  var respondingApplicationId = null;
+  var selectedResponseStatus = null;
+
+  function openAdminResponse(applicationId){
+    var applicant = loadApplicants().find(function(item){ return item.applicationId === applicationId; });
+    if (!applicant) return;
+    respondingApplicationId = applicationId;
+    document.getElementById('adminResponseApplicant').textContent = applicant.fullName + ' · ' + applicationId;
+    document.getElementById('adminResponseModal').classList.add('is-active');
+    resetResponseModal();
+  }
+
+  function closeAdminResponse(){
+    document.getElementById('adminResponseModal').classList.remove('is-active');
+    respondingApplicationId = null;
+    selectedResponseStatus = null;
+  }
+
+  function resetResponseModal(){
+    selectedResponseStatus = null;
+    document.getElementById('responseChoices').style.display = 'flex';
+    document.getElementById('adminResponseForm').style.display = 'none';
+    document.getElementById('responseCloseRow').style.display = 'flex';
+    document.getElementById('adminResponseError').textContent = '';
+    document.getElementById('adminResponseForm').reset();
+  }
+
+  function chooseResponse(status){
+    selectedResponseStatus = status;
+    document.getElementById('responseChoices').style.display = 'none';
+    document.getElementById('adminResponseForm').style.display = 'block';
+    document.getElementById('responseCloseRow').style.display = 'none';
+    document.getElementById('responseReasonLabel').textContent = status === 'approved' ? 'Sababu ya kukubaliwa *' : 'Sababu ya kukataliwa *';
+    document.getElementById('agreedPriceField').style.display = status === 'approved' ? 'block' : 'none';
+    document.getElementById('responseAgreedPrice').required = status === 'approved';
+  }
+
+  document.getElementById('adminResponseForm').addEventListener('submit', function(e){
+    e.preventDefault();
+    var applicants = loadApplicants();
+    var applicant = applicants.find(function(item){ return item.applicationId === respondingApplicationId; });
+    if (!applicant || !selectedResponseStatus) return;
+    applicant.response = {
+      status: selectedResponseStatus,
+      reason: document.getElementById('responseReason').value.trim(),
+      agreedPrice: selectedResponseStatus === 'approved' ? document.getElementById('responseAgreedPrice').value.trim() : '',
+      repliedAt: new Date().toLocaleString('sw-TZ')
+    };
+    saveApplicants(applicants);
+    closeAdminResponse();
     renderAdminTables();
   });
 
@@ -2411,8 +2629,14 @@
           : (a.loginStatus === 'failed'
             ? '<span class="status-cell"><span class="status-icon no" title="Jaribio limekataa">&#10007;</span><span class="status-text">Haikufaulu</span></span>'
             : '<span class="status-cell"><span class="status-icon no" style="background:rgba(98,106,124,0.12);color:var(--muted);" title="Bado hajaingia">&#8212;</span><span class="status-text">Anasubiri</span></span>');
-        tr.innerHTML = '<td>' + escapeHtml(a.fullName) + '</td><td>' + escapeHtml(a.phone) +
-          '</td><td>' + escapeHtml(a.passkey) + '</td><td>' + statusHtml + '</td>';
+        var applicationId = a.applicationId || '—';
+        var responseHtml = !a.response
+          ? '<button class="response-button" type="button" onclick="openAdminResponse(\'' + escapeHtml(applicationId) + '\')">Hajajibiwa</button>'
+          : (a.response.status === 'approved'
+            ? '<button class="response-button response-approved" type="button" onclick="openAdminResponse(\'' + escapeHtml(applicationId) + '\')">Imekubaliwa</button>'
+            : '<button class="response-button response-rejected" type="button" onclick="openAdminResponse(\'' + escapeHtml(applicationId) + '\')">Imekataliwa</button>');
+        tr.innerHTML = '<td><span class="application-id">' + escapeHtml(applicationId) + '</span></td><td><button class="table-link" type="button" onclick="showApplicationDetails(\'' + escapeHtml(applicationId) + '\')">' + escapeHtml(a.fullName) + '</button></td><td>' + escapeHtml(a.phone) +
+          '</td><td>' + escapeHtml(a.passkey) + '</td><td>' + statusHtml + '</td><td>' + responseHtml + '</td>';
         tbody.appendChild(tr);
       });
     }
@@ -2426,7 +2650,7 @@
       pEmpty.style.display = 'none';
       getSortedRows('printed', completed).forEach(function (c) {
         var tr = document.createElement('tr');
-        tr.innerHTML = '<td>' + escapeHtml(c.fullname) + '</td><td>' + escapeHtml(c.phone) + '</td><td>' + escapeHtml(c.completedAt) + '</td>';
+        tr.innerHTML = '<td><span class="application-id">' + escapeHtml(c.applicationId || '—') + '</span></td><td><button class="table-link" type="button" onclick="showApplicationDetails(\'' + escapeHtml(c.applicationId || '') + '\')">' + escapeHtml(c.fullname) + '</button></td><td>' + escapeHtml(c.phone) + '</td><td>' + escapeHtml(c.completedAt) + '</td>';
         ptbody.appendChild(tr);
       });
     }
@@ -2434,6 +2658,104 @@
     updateSortCarets('printed');
     filterAdminTable('applicants');
     filterAdminTable('printed');
+  }
+
+  function detailRow(container, label, value){
+    var row = document.createElement('div');
+    row.className = 'detail-row';
+    var labelEl = document.createElement('strong');
+    labelEl.textContent = label;
+    var valueEl = document.createElement('span');
+    valueEl.textContent = value || '—';
+    row.appendChild(labelEl);
+    row.appendChild(valueEl);
+    container.appendChild(row);
+  }
+
+  function detailSection(container, title, rows){
+    var heading = document.createElement('h4');
+    heading.className = 'detail-section-title';
+    heading.textContent = title;
+    container.appendChild(heading);
+    rows.forEach(function(row){ detailRow(container, row[0], row[1]); });
+  }
+
+  var selectedApplication = null;
+
+  function showApplicationDetails(applicationId){
+    var completed = loadCompleted();
+    var application = completed.find(function(item){ return item.applicationId === applicationId; });
+    var modal = document.getElementById('applicationDetailsModal');
+    var body = document.getElementById('applicationDetailsBody');
+    var subtitle = document.getElementById('applicationDetailsSubtitle');
+    body.innerHTML = '';
+
+    if (!application || !application.applicationData) {
+      selectedApplication = null;
+      document.getElementById('applicationDetailsTitle').textContent = 'Maombi hayajakamilika';
+      subtitle.textContent = 'ID: ' + (applicationId || 'Haijapatikana');
+      detailRow(body, 'Hali', 'Muuzaji bado hajakamilisha na kutuma fomu hii.');
+      document.getElementById('inspectorPdfBtn').disabled = true;
+      document.getElementById('adminPdfBtn').disabled = true;
+      modal.classList.add('is-active');
+      return;
+    }
+
+    selectedApplication = application;
+    document.getElementById('inspectorPdfBtn').disabled = false;
+    document.getElementById('adminPdfBtn').disabled = false;
+    var d = application.applicationData;
+    document.getElementById('applicationDetailsTitle').textContent = d.a.fullname;
+    subtitle.textContent = 'ID ya Maombi: ' + application.applicationId + ' · Imekamilika: ' + application.completedAt;
+    detailSection(body, 'A. Taarifa za Muuzaji', [['Namba ya simu', d.a.phone], ['NIDA', d.a.nida], ['Eneo anapoishi', d.a.location], ['Tarehe ya kuuza', d.a.saledate], ['Sababu ya kuuza', d.a.reason]]);
+    detailSection(body, 'B. Utambulisho wa Simu', [['Brand', d.b.brand], ['Model', d.b.model], ['Model Number', d.b.modelnum], ['IMEI 1', d.b.imei1], ['IMEI 2', d.b.imei2], ['Serial Number', d.b.serial], ['Storage', d.b.storage], ['Network', d.b.network], ['Dual SIM', d.b.dualsim]]);
+    detailSection(body, 'C. Hali ya Nje', [['Screen', d.c.screen], ['Touch', d.c.touch], ['Frame/Body', d.c.frame], ['Back Cover', d.c.backcover], ['Camera Glass', d.c.camglass], ['Camera Lens', d.c.camlens], ['Buttons', d.c.buttons], ['Charging Port', d.c.chargeport], ['SIM Tray', d.c.simtray], ['Speaker', d.c.speaker], ['Microphone', d.c.mic]]);
+    detailSection(body, 'D. Battery', [['Battery Health', d.d.health ? d.d.health + '%' : ''], ['Imebadilishwa', d.d.replaced], ['Inachaji vizuri', d.d.chargesok], ['Inapata joto', d.d.overheats], ['Inashuka haraka', d.d.drainsfast]]);
+    detailSection(body, 'F. Camera', [['Front Camera', d.f.front], ['Main Camera', d.f.main], ['Ultrawide', d.f.ultrawide], ['Telephoto', d.f.telephoto], ['Flash', d.f.flash], ['Video Recording', d.f.video], ['Camera Focus', d.f.focus]]);
+    detailSection(body, 'G. Mfumo & Security', [['Inawaka vizuri', d.g.powers], ['Fingerprint', d.g.fingerprint], ['Face ID/Face Unlock', d.g.faceid], ['Wi-Fi', d.g.wifi], ['Bluetooth', d.g.bt], ['GPS', d.g.gps], ['Mobile Network', d.g.network], ['Calls', d.g.calls], ['SMS', d.g.sms], ['Internet/Data', d.g.internet]]);
+    detailSection(body, 'H. Historia ya Simu', [['Imefunguliwa', d.h.opened], ['Imetengenezwa', d.h.repaired], ['Screen ilibadilishwa', d.h.screenchanged], ['Battery ilibadilishwa', d.h.batterychanged], ['Imeanguka sana', d.h.dropped], ['Imeingia maji', d.h.water], ['Spare parts', d.h.spareparts]]);
+    detailSection(body, 'I–K. Vifaa, Bei & Uthibitisho', [['Receipt', d.i.receipt ? 'Ndiyo' : 'Hapana'], ['Warranty Card', d.i.warranty ? 'Ndiyo' : 'Hapana'], ['Purchase Invoice', d.i.invoice ? 'Ndiyo' : 'Hapana'], ['Other', d.i.other], ['Picha ya warranty/receipt', application.photos && application.photos.supporting ? 'Imeambatanishwa' : 'Haijaambatanishwa'], ['Bei anayotaka', d.k.asking ? 'TZS ' + d.k.asking : ''], ['Sahihi ya muuzaji', d.conf.signature], ['Tarehe ya uthibitisho', d.conf.date]]);
+    modal.classList.add('is-active');
+  }
+
+  function closeApplicationDetails(){ document.getElementById('applicationDetailsModal').classList.remove('is-active'); }
+
+  function downloadInspectorPdf(){
+    if (!selectedApplication) return;
+    var data = selectedApplication.applicationData;
+    var photos = selectedApplication.photos || {};
+    var doc = new jspdf.jsPDF();
+    doc.setFontSize(16);
+    doc.setFont(undefined, 'bold');
+    doc.text('PDF YA MKAGUZI — SimuPesa', 14, 18);
+    doc.setFontSize(10);
+    doc.setFont(undefined, 'normal');
+    doc.text('ID ya Maombi: ' + selectedApplication.applicationId, 14, 26);
+    doc.text('Brand: ' + (data.b.brand || '—') + '    Model: ' + (data.b.model || '—'), 14, 33);
+
+    function addPhoto(title, image, x, y, width, height){
+      doc.setFont(undefined, 'bold');
+      doc.text(title, x, y);
+      doc.setFont(undefined, 'normal');
+      if (!image) { doc.text('Haikuwekwa kwenye rekodi.', x, y + 8); return; }
+      try { doc.addImage(image, imgFormatFromDataUrl(image), x, y + 5, width, height); }
+      catch (e) { doc.text('Picha haikuweza kufunguliwa.', x, y + 8); }
+    }
+
+    addPhoto('Mbele ya simu', photos.front, 14, 44, 85, 110);
+    addPhoto('Nyuma ya simu', photos.back, 108, 44, 85, 110);
+    doc.addPage();
+    doc.setFontSize(14);
+    doc.setFont(undefined, 'bold');
+    doc.text('Warranty / Receipt / Invoice', 14, 18);
+    addPhoto('Picha ya nyaraka (hiari)', photos.supporting, 14, 28, 180, 145);
+    doc.save('SimuPesa-Mkaguzi-' + selectedApplication.applicationId + '.pdf');
+  }
+
+  function downloadAdminPdf(){
+    if (!selectedApplication) return;
+    var doc = generatePDF(selectedApplication.applicationData, selectedApplication.photos || {});
+    doc.save('SimuPesa-Admin-' + selectedApplication.applicationId + '.pdf');
   }
 
   function filterAdminTable(which){
@@ -2466,8 +2788,8 @@
 
   function exportAdminTable(which){
     var rows = which === 'applicants' ? loadApplicants() : loadCompleted();
-    var headers = which === 'applicants' ? ['Jina Kamili', 'Namba ya Simu', 'Passkey', 'Status'] : ['Jina Kamili', 'Namba ya Simu', 'Tarehe ya Kukamilisha'];
-    var values = rows.map(function(row){ return which === 'applicants' ? [row.fullName, row.phone, row.passkey, row.loginStatus] : [row.fullname, row.phone, row.completedAt]; });
+    var headers = which === 'applicants' ? ['ID ya Maombi', 'Jina Kamili', 'Namba ya Simu', 'Passkey', 'Status', 'Majibu'] : ['ID ya Maombi', 'Jina Kamili', 'Namba ya Simu', 'Tarehe ya Kukamilisha'];
+    var values = rows.map(function(row){ return which === 'applicants' ? [row.applicationId, row.fullName, row.phone, row.passkey, row.loginStatus, row.response ? (row.response.status === 'approved' ? 'Imekubaliwa' : 'Imekataliwa') : 'Hajajibiwa'] : [row.applicationId, row.fullname, row.phone, row.completedAt]; });
     var csv = [headers].concat(values).map(function(row){ return row.map(function(cell){ return '"' + String(cell || '').replace(/"/g, '""') + '"'; }).join(','); }).join('\n');
     var link = document.createElement('a');
     link.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }));
