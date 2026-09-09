@@ -2437,26 +2437,49 @@
   }
 
   /* ===================== ADMIN LOGIN ===================== */
-  var ADMIN_EMAIL = 'admin@simu.com';
-  var ADMIN_PASSWORD = 'Admin4321';
+  async function isSimuPesaAdmin(userId){
+    if (!supabaseClient || !userId) return false;
+    var result = await supabaseClient.from('admin_profiles').select('id').eq('id', userId).maybeSingle();
+    if (result.error) throw result.error;
+    return Boolean(result.data);
+  }
 
-  document.getElementById('adminLoginForm').addEventListener('submit', function (e) {
+  document.getElementById('adminLoginForm').addEventListener('submit', async function (e) {
     e.preventDefault();
     var email = document.getElementById('adminEmail').value.trim().toLowerCase();
     var pass = document.getElementById('adminPassword').value;
     var errEl = document.getElementById('adminLoginError');
-    if (email === ADMIN_EMAIL && pass === ADMIN_PASSWORD) {
-      sessionStorage.setItem('simupesa_admin_logged_in', '1');
+    var submitBtn = this.querySelector('button[type="submit"]');
+
+    if (!supabaseClient) {
+      errEl.textContent = 'Muunganisho wa Supabase haujapatikana. Angalia intaneti, kisha jaribu tena.';
+      return;
+    }
+
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Inaingia...';
+    try {
+      var authResult = await supabaseClient.auth.signInWithPassword({ email: email, password: pass });
+      if (authResult.error) throw authResult.error;
+      if (!await isSimuPesaAdmin(authResult.data.user.id)) {
+        await supabaseClient.auth.signOut();
+        errEl.textContent = 'Akaunti hii haina ruhusa ya SimuPesa Admin.';
+        return;
+      }
       errEl.textContent = '';
       document.getElementById('adminLoginForm').reset();
       showView('adminDashboardView');
-    } else {
-      errEl.textContent = 'Email au password si sahihi.';
+    } catch (error) {
+      console.error('Admin sign-in error:', error);
+      errEl.textContent = error.message === 'Invalid login credentials' ? 'Email au password si sahihi.' : 'Imeshindikana kuingia. Jaribu tena.';
+    } finally {
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Ingia';
     }
   });
 
-  function adminLogout(){
-    sessionStorage.removeItem('simupesa_admin_logged_in');
+  async function adminLogout(){
+    if (supabaseClient) await supabaseClient.auth.signOut();
     showView('siteView');
   }
 
@@ -2822,13 +2845,19 @@
   }
 
   /* ===================== INITIAL ROUTE ===================== */
-  if (window.location.hash === '#admin') {
-    if (sessionStorage.getItem('simupesa_admin_logged_in') === '1') {
-      showView('adminDashboardView');
-    } else {
+  (async function routeAdmin(){
+    if (window.location.hash !== '#admin') return;
+    if (!supabaseClient) { showView('adminLoginView'); return; }
+    try {
+      var sessionResult = await supabaseClient.auth.getSession();
+      var user = sessionResult.data.session && sessionResult.data.session.user;
+      if (user && await isSimuPesaAdmin(user.id)) showView('adminDashboardView');
+      else showView('adminLoginView');
+    } catch (error) {
+      console.warn('Admin session check failed:', error);
       showView('adminLoginView');
     }
-  }
+  })();
 </script>
 
 </body>
