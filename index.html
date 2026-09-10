@@ -1,4 +1,3 @@
-<!DOCTYPE html>
 <html lang="sw">
 <head>
 <meta charset="UTF-8">
@@ -1207,6 +1206,7 @@
 
   <div class="cta-row">
     <a class="btn btn-primary-glow" href="#gate" onclick="showView('gateView');return false;">Pata Fomu &rarr;</a>
+    <a class="btn ghost" href="#angalia" onclick="showView('trackGateView');return false;">Angalia Maombi</a>
   </div>
   <p class="hero-note">Namba: +255 718 122 255 / +255 617 757 020 &nbsp;·&nbsp; Andaa kitambulisho chako cha NIDA kabla ya kuwasiliana</p>
 </section>
@@ -1327,6 +1327,7 @@
       <div class="direct-contact">
         <div class="cta-row">
           <a class="btn btn-primary-glow" href="#gate" onclick="showView('gateView');return false;">Pata Fomu &rarr;</a>
+          <a class="btn ghost" href="#angalia" onclick="showView('trackGateView');return false;">Angalia Maombi</a>
         </div>
       </div>
 
@@ -1411,6 +1412,83 @@
           <button type="submit" class="btn" style="border:none;cursor:pointer;">Ingia</button>
         </div>
       </form>
+    </div>
+  </div>
+</div>
+
+<!-- ============ TRACK GATE VIEW (Angalia Maombi — phone+passkey lookup) ============ -->
+<div id="trackGateView" class="view">
+  <div class="app-topbar">
+    <button class="back-link" onclick="showView('siteView')">&larr; Rudi kwenye tovuti</button>
+    <span class="app-title">SimuPesa &mdash; Angalia Maombi</span>
+    <span></span>
+  </div>
+  <div class="app-view">
+    <div class="app-card glass-panel">
+      <p class="label" style="font-size:12.5px;color:var(--muted);">Angalia hali ya maombi yako</p>
+      <h1>Weka namba na tarakimu 6</h1>
+      <hr class="rule" style="margin-left:0;">
+      <p class="sub">Tumia namba ya simu na tarakimu 6 ulizotumiwa na admin kuona maombi yako na majibu ya admin — hauhitaji kujaza fomu tena.</p>
+
+      <form id="trackGateForm" autocomplete="off">
+        <div class="field">
+          <label for="trackPhone">Namba ya Simu</label>
+          <input type="tel" id="trackPhone" placeholder="0712 345 678" required>
+        </div>
+        <div class="field">
+          <label for="trackCode">Tarakimu 6 (Passkey)</label>
+          <input type="text" id="trackCode" maxlength="6" inputmode="numeric" placeholder="......" required>
+        </div>
+        <p class="app-error" id="trackGateError"></p>
+        <div class="app-btn-row">
+          <button type="submit" class="btn" style="border:none;cursor:pointer;">Angalia Maombi</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- ============ TRACK RESULT VIEW (read-only application + admin response) ============ -->
+<div id="trackResultView" class="view">
+  <div class="app-topbar">
+    <button class="back-link" onclick="showView('trackGateView')">&larr; Rudi</button>
+    <span class="app-title" id="trackResultTopbarName">Maombi Yangu</span>
+    <span></span>
+  </div>
+  <div class="app-view">
+    <div class="form-shell">
+      <div class="passkey-display is-active" style="margin:0 0 20px;">
+        <span style="font-size:12.5px;color:var(--muted);">Namba yako ya maombi</span>
+        <div class="code" id="trackApplicationId">—</div>
+      </div>
+
+      <div class="seller-response-card" id="trackResponseCard">
+        <h3 id="trackResponseTitle">Majibu ya Maombi</h3>
+        <p id="trackResponseMessage"></p>
+      </div>
+
+      <div class="form-section glass-panel" id="trackNotSubmittedCard" style="display:none;">
+        <h2>Bado hujatuma fomu</h2>
+        <hr class="rule">
+        <p class="sub" style="margin-top:0;">Hujaijaza na kuituma fomu ya kuuza simu bado. Tumia kitufe "Pata Fomu" kwenye ukurasa wa mwanzo kuijaza.</p>
+        <div class="app-btn-row">
+          <button class="btn" type="button" style="border:none;cursor:pointer;" onclick="showView('gateView')">Nenda kwenye Fomu</button>
+        </div>
+      </div>
+
+      <div id="trackSubmittedWrap" style="display:none;">
+        <div class="form-section glass-panel" style="text-align:left;">
+          <h2>Taarifa ya Maombi</h2>
+          <hr class="rule">
+          <div class="detail-grid" id="trackDetailsBody" style="max-height:none;overflow:visible;"></div>
+        </div>
+        <div class="app-btn-row">
+          <button class="btn" id="trackPdfBtn" type="button" style="border:none;cursor:pointer;" onclick="downloadTrackedPdf()">Pakua PDF</button>
+          <button class="btn ghost" type="button" style="border:none;cursor:pointer;" onclick="showView('siteView')">Funga</button>
+        </div>
+      </div>
+
+      <p class="app-error" id="trackResultError"></p>
     </div>
   </div>
 </div>
@@ -1819,7 +1897,7 @@
     </div>
     <div class="app-btn-row">
       <button class="btn" type="button" style="border:none;cursor:pointer;" onclick="openSellerPdfViewer()">Tazama PDF</button>
-      <button class="btn ghost" style="border:none;cursor:pointer;" onclick="closeSuccessModal()">Funga</button>
+      <button class="btn ghost" type="button" style="border:none;cursor:pointer;" onclick="closeSuccessModal()">Funga</button>
     </div>
   </div>
 </div>
@@ -2204,13 +2282,16 @@
     }
   }
 
-  function renderSellerResponse(applicant){
-    var card = document.getElementById('sellerResponseCard');
+  function renderSellerResponse(applicant, cardId, titleId, messageId){
+    cardId = cardId || 'sellerResponseCard';
+    titleId = titleId || 'sellerResponseTitle';
+    messageId = messageId || 'sellerResponseMessage';
+    var card = document.getElementById(cardId);
     var response = applicant.response;
     card.classList.remove('is-active', 'is-rejected');
     if (!response) return;
-    var title = document.getElementById('sellerResponseTitle');
-    var message = document.getElementById('sellerResponseMessage');
+    var title = document.getElementById(titleId);
+    var message = document.getElementById(messageId);
     if (response.status === 'approved') {
       title.textContent = 'Maombi yako yamekubaliwa';
       message.textContent = (response.reason ? response.reason + '. ' : '') + (response.agreed_price ? 'Bei iliyokubaliwa ni TZS ' + Number(response.agreed_price).toLocaleString('en-US') + '.' : '');
@@ -3045,6 +3126,102 @@
 
     var doc = generatePDF(selectedApplication.applicationData, photos);
     doc.save('SimuPesa-Admin-' + selectedApplication.applicationId + '.pdf');
+  }
+
+  /* ===================== TRACK MY APPLICATION ("Angalia Maombi") ===================== */
+  var trackedApplication = null; // { applicationId, fullName, phone, applicationData, photos, response }
+
+  var trackGateForm = document.getElementById('trackGateForm');
+  trackGateForm.addEventListener('submit', async function (e) {
+    e.preventDefault();
+    var phone = document.getElementById('trackPhone').value;
+    var code = document.getElementById('trackCode').value.trim();
+    var errEl = document.getElementById('trackGateError');
+    var submitBtn = trackGateForm.querySelector('button[type="submit"]');
+
+    errEl.textContent = '';
+    if (submitBtn) { submitBtn.disabled = true; submitBtn.textContent = 'Inakagua...'; }
+
+    try {
+      var result = await callRpc('rpc_track_application', { p_phone: phone, p_passkey: code });
+      if (!result) throw new Error('SELLER_NOT_FOUND');
+      renderTrackResult(result);
+      showView('trackResultView');
+    } catch (error) {
+      console.error('Track application failed:', error);
+      if (error.code === 'SELLER_NOT_FOUND') {
+        errEl.textContent = 'Namba hii haijasajiliwa. Wasiliana na admin kwanza kupata usajili.';
+      } else if (error.code === 'INVALID_PASSKEY') {
+        errEl.textContent = 'Tarakimu 6 si sahihi. Jaribu tena au wasiliana na admin.';
+      } else {
+        errEl.textContent = 'Imeshindikana kuunganisha. Angalia intaneti yako kisha jaribu tena.';
+      }
+    } finally {
+      if (submitBtn) { submitBtn.disabled = false; submitBtn.textContent = 'Angalia Maombi'; }
+    }
+  });
+
+  function renderTrackResult(result){
+    document.getElementById('trackResultTopbarName').textContent = result.full_name;
+    document.getElementById('trackApplicationId').textContent = result.application_id;
+    document.getElementById('trackResultError').textContent = '';
+
+    var response = result.response_status
+      ? { status: result.response_status, reason: result.response_reason, agreed_price: result.agreed_price }
+      : null;
+    renderSellerResponse({ response: response }, 'trackResponseCard', 'trackResponseTitle', 'trackResponseMessage');
+
+    var notSubmittedCard = document.getElementById('trackNotSubmittedCard');
+    var submittedWrap = document.getElementById('trackSubmittedWrap');
+
+    if (!result.has_submitted) {
+      trackedApplication = null;
+      notSubmittedCard.style.display = 'block';
+      submittedWrap.style.display = 'none';
+      return;
+    }
+
+    notSubmittedCard.style.display = 'none';
+    submittedWrap.style.display = 'block';
+
+    var d = dbRowToFormShape(result.application_id, result.application);
+    trackedApplication = {
+      applicationId: result.application_id,
+      applicationData: d,
+      photos: { front: result.front_url, back: result.back_url, supporting: result.supporting_url }
+    };
+
+    var body = document.getElementById('trackDetailsBody');
+    body.innerHTML = '';
+    detailSection(body, 'A. Taarifa za Muuzaji', [['Jina', d.a.fullname], ['Namba ya simu', d.a.phone], ['NIDA', d.a.nida], ['Eneo anapoishi', d.a.location], ['Tarehe ya kuuza', d.a.saledate], ['Sababu ya kuuza', d.a.reason]]);
+    detailSection(body, 'B. Utambulisho wa Simu', [['Brand', d.b.brand], ['Model', d.b.model], ['Model Number', d.b.modelnum], ['IMEI 1', d.b.imei1], ['IMEI 2', d.b.imei2], ['Serial Number', d.b.serial], ['Storage', d.b.storage], ['Network', d.b.network], ['Dual SIM', d.b.dualsim]]);
+    detailSection(body, 'C. Hali ya Nje', [['Screen', d.c.screen], ['Touch', d.c.touch], ['Frame/Body', d.c.frame], ['Back Cover', d.c.backcover], ['Camera Glass', d.c.camglass], ['Camera Lens', d.c.camlens], ['Buttons', d.c.buttons], ['Charging Port', d.c.chargeport], ['SIM Tray', d.c.simtray], ['Speaker', d.c.speaker], ['Microphone', d.c.mic]]);
+    detailSection(body, 'D. Battery', [['Battery Health', d.d.health ? d.d.health + '%' : ''], ['Imebadilishwa', d.d.replaced], ['Inachaji vizuri', d.d.chargesok], ['Inapata joto', d.d.overheats], ['Inashuka haraka', d.d.drainsfast]]);
+    detailSection(body, 'F. Camera', [['Front Camera', d.f.front], ['Main Camera', d.f.main], ['Ultrawide', d.f.ultrawide], ['Telephoto', d.f.telephoto], ['Flash', d.f.flash], ['Video Recording', d.f.video], ['Camera Focus', d.f.focus]]);
+    detailSection(body, 'G. Mfumo & Security', [['Inawaka vizuri', d.g.powers], ['Fingerprint', d.g.fingerprint], ['Face ID/Face Unlock', d.g.faceid], ['Wi-Fi', d.g.wifi], ['Bluetooth', d.g.bt], ['GPS', d.g.gps], ['Mobile Network', d.g.network], ['Calls', d.g.calls], ['SMS', d.g.sms], ['Internet/Data', d.g.internet]]);
+    detailSection(body, 'H. Historia ya Simu', [['Imefunguliwa', d.h.opened], ['Imetengenezwa', d.h.repaired], ['Screen ilibadilishwa', d.h.screenchanged], ['Battery ilibadilishwa', d.h.batterychanged], ['Imeanguka sana', d.h.dropped], ['Imeingia maji', d.h.water], ['Spare parts', d.h.spareparts]]);
+    detailSection(body, 'I–K. Vifaa, Bei & Uthibitisho', [['Receipt', d.i.receipt ? 'Ndiyo' : 'Hapana'], ['Warranty Card', d.i.warranty ? 'Ndiyo' : 'Hapana'], ['Purchase Invoice', d.i.invoice ? 'Ndiyo' : 'Hapana'], ['Other', d.i.other], ['Picha ya warranty/receipt', result.supporting_url ? 'Imeambatanishwa' : 'Haijaambatanishwa'], ['Bei anayotaka', d.k.asking ? 'TZS ' + d.k.asking : ''], ['Sahihi ya muuzaji', d.conf.signature], ['Tarehe ya uthibitisho', d.conf.date]]);
+  }
+
+  async function downloadTrackedPdf(){
+    if (!trackedApplication) return;
+    var btn = document.getElementById('trackPdfBtn');
+    var originalLabel = btn.textContent;
+    btn.disabled = true; btn.textContent = 'Inapakia picha...';
+
+    var out = {};
+    var keys = ['front', 'back', 'supporting'];
+    for (var i = 0; i < keys.length; i++) {
+      var key = keys[i];
+      var url = trackedApplication.photos[key];
+      if (!url) { out[key] = null; continue; }
+      try { out[key] = await urlToDataUrl(url); }
+      catch (e) { console.error('Could not load photo "' + key + '":', e); out[key] = null; }
+    }
+
+    btn.disabled = false; btn.textContent = originalLabel;
+    var doc = generatePDF(trackedApplication.applicationData, out);
+    doc.save('SimuPesa-' + trackedApplication.applicationId + '.pdf');
   }
 
   function filterAdminTable(which){
