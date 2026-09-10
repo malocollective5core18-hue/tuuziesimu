@@ -1953,6 +1953,20 @@
   </div>
 </div>
 
+<!-- ============ RESET PASSKEY (admin) ============ -->
+<div id="resetPasskeyModal" class="modal-overlay" role="dialog" aria-modal="true" aria-labelledby="resetPasskeyTitle">
+  <div class="modal-card glass-panel">
+    <h3 id="resetPasskeyTitle">Passkey Mpya</h3>
+    <p class="sub" id="resetPasskeyApplicant"></p>
+    <div class="passkey-display is-active" style="margin-top:14px;">
+      <span style="font-size:12.5px;color:var(--muted);">Mpe muuzaji tarakimu hizi mpya. Passkey ya zamani haifanyi kazi tena.</span>
+      <div class="code" id="resetPasskeyCode"></div>
+      <div class="passkey-actions"><button class="btn-sm passkey-copy" type="button" id="copyResetPasskeyBtn" onclick="copyResetPasskey()">Nakili passkey</button></div>
+    </div>
+    <div class="app-btn-row"><button class="btn ghost" type="button" style="border:none;cursor:pointer;" onclick="closeResetPasskeyModal()">Funga</button></div>
+  </div>
+</div>
+
 <!-- ============ ADMIN LOGIN VIEW ============ -->
 <div id="adminLoginView" class="view">
   <div class="app-topbar">
@@ -2033,7 +2047,7 @@
           <button class="btn ghost btn-sm" type="button" onclick="exportAdminTable('applicants')">Pakua CSV</button>
         </div>
         <div class="admin-table-wrap"><table class="admin-table" id="applicantsTable">
-          <thead><tr><th onclick="sortAdminTable('applicants','applicationId')">ID ya Maombi <span class="sort-caret"></span></th><th onclick="sortAdminTable('applicants','fullName')">Jina <span class="sort-caret"></span></th><th onclick="sortAdminTable('applicants','phone')">Namba ya Simu <span class="sort-caret"></span></th><th title="Passkey inaonyeshwa mara moja tu wakati wa usajili, kisha inafichwa kwa usalama">Passkey<th onclick="sortAdminTable('applicants','loginStatus')">Status <span class="sort-caret"></span></th><th>Majibu</th><th>Hatua</th></tr></thead>
+          <thead><tr><th onclick="sortAdminTable('applicants','applicationId')">ID ya Maombi <span class="sort-caret"></span></th><th onclick="sortAdminTable('applicants','fullName')">Jina <span class="sort-caret"></span></th><th onclick="sortAdminTable('applicants','phone')">Namba ya Simu <span class="sort-caret"></span></th><th title="Passkey haiwezi kuonekana tena baada ya usajili (imefichwa kwa usalama) — bonyeza 'Weka upya' kutengeneza mpya">Passkey<th onclick="sortAdminTable('applicants','loginStatus')">Status <span class="sort-caret"></span></th><th>Majibu</th><th>Hatua</th></tr></thead>
           <tbody id="applicantsTbody"></tbody>
         </table></div>
         <p class="empty-note" id="applicantsEmpty" data-default-message="Hakuna waombaji bado." style="display:none;">Hakuna waombaji bado.</p>
@@ -2767,6 +2781,45 @@
     }
   }
 
+  /* ===================== ADMIN: RESET SELLER PASSKEY =====================
+     The old passkey can never be shown again — passkey_hash is a bcrypt
+     hash and is one-way by design. This generates a brand-new passkey
+     server-side, invalidates the old one, and revokes any active
+     session for that seller (see rpc_reset_seller_passkey). */
+  async function resetSellerPasskey(applicationId){
+    var row = adminOverviewCache.find(function(item){ return item.application_id === applicationId; });
+    if (!row) return;
+    if (!window.confirm('Weka upya passkey ya ' + row.full_name + ' (' + applicationId + ')? Passkey ya zamani haitafanya kazi tena.')) return;
+    try {
+      var result = await callRpc('rpc_reset_seller_passkey', { p_application_id: applicationId });
+      if (!result) throw new Error('RESET_FAILED');
+      document.getElementById('resetPasskeyApplicant').textContent = result.full_name + ' · ' + result.application_id;
+      document.getElementById('resetPasskeyCode').textContent = result.passkey;
+      document.getElementById('resetPasskeyModal').classList.add('is-active');
+      await renderAdminTables();
+    } catch (error) {
+      console.error('Reset passkey failed:', error);
+      window.alert(error.code === 'NOT_AN_ADMIN' ? 'Akaunti hii haina ruhusa ya Admin.' : 'Imeshindikana kuweka upya passkey. Jaribu tena.');
+    }
+  }
+
+  function closeResetPasskeyModal(){ document.getElementById('resetPasskeyModal').classList.remove('is-active'); }
+
+  function copyResetPasskey(){
+    var code = document.getElementById('resetPasskeyCode').textContent.trim();
+    if (!code) return;
+    var button = document.getElementById('copyResetPasskeyBtn');
+    function done(){
+      button.textContent = 'Imenakiliwa ✓';
+      setTimeout(function(){ button.textContent = 'Nakili passkey'; }, 1800);
+    }
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(code).then(done).catch(function(){ window.prompt('Nakili passkey hii:', code); });
+    } else {
+      window.prompt('Nakili passkey hii:', code);
+    }
+  }
+
   var respondingApplication = null; // { applicationId (text), applicationPk (uuid) }
   var selectedResponseStatus = null;
 
@@ -2918,7 +2971,7 @@
             ? '<button class="response-button response-approved" type="button" onclick="openAdminResponse(\'' + escapeHtml(applicationId) + '\')">Imekubaliwa</button>'
             : '<button class="response-button response-rejected" type="button" onclick="openAdminResponse(\'' + escapeHtml(applicationId) + '\')">Imekataliwa</button>');
         tr.innerHTML = '<td><span class="application-id">' + escapeHtml(applicationId) + '</span></td><td><button class="table-link" type="button" onclick="showApplicationDetails(\'' + escapeHtml(applicationId) + '\')">' + escapeHtml(a.full_name) + '</button></td><td>' + escapeHtml(a.phone) +
-          '</td><td>&bull;&bull;&bull;&bull;&bull;&bull;</td><td>' + statusHtml + '</td><td>' + responseHtml + '</td><td><button class="delete-application" type="button" onclick="deleteSellerApplication(\'' + escapeHtml(applicationId) + '\')">Futa</button></td>';
+          '</td><td><button class="response-button" type="button" onclick="resetSellerPasskey(\'' + escapeHtml(applicationId) + '\')">Weka upya</button></td><td>' + statusHtml + '</td><td>' + responseHtml + '</td><td><button class="delete-application" type="button" onclick="deleteSellerApplication(\'' + escapeHtml(applicationId) + '\')">Futa</button></td>';
         tbody.appendChild(tr);
       });
     }
